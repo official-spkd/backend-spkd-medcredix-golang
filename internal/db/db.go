@@ -8,6 +8,9 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
+	"github.com/spkd/medcredix/internal/appenv"
 )
 
 // schema.sql = ERD resmi MedCredix (SRS Appendix B, 33 tabel) lengkap dengan
@@ -24,17 +27,41 @@ func getenv(key, fallback string) string {
 }
 
 func Open() (*gorm.DB, error) {
+	prod := appenv.IsProduction()
+	host := getenv("DB_HOST", "localhost")
+	password := getenv("DB_PASSWORD", "")
+	defaultSSL := "disable"
+	if prod {
+		defaultSSL = "require"
+	}
+	sslmode := getenv("DB_SSLMODE", defaultSSL)
+
+	if prod {
+		if len(password) < 16 {
+			return nil, fmt.Errorf("DB_PASSWORD wajib diisi minimal 16 karakter saat APP_ENV=production")
+		}
+		local := host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasPrefix(host, "/")
+		if sslmode == "disable" && !local {
+			return nil, fmt.Errorf("DB_SSLMODE=disable ke database %q tidak aman di produksi (pakai require / verify-full)", host)
+		}
+	}
+
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=Asia/Jakarta",
-		getenv("DB_HOST", "localhost"),
-		getenv("DB_PORT", "5432"),
-		getenv("DB_USER", "medcredix"),
-		getenv("DB_PASSWORD", ""),
-		getenv("DB_NAME", "medcredix"),
-		getenv("DB_SSLMODE", "disable"),
+		dsnQuote(host),
+		dsnQuote(getenv("DB_PORT", "5432")),
+		dsnQuote(getenv("DB_USER", "medcredix")),
+		dsnQuote(password),
+		dsnQuote(getenv("DB_NAME", "medcredix")),
+		dsnQuote(sslmode),
 	)
 
-	d, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	cfg := &gorm.Config{}
+	if prod {
+		// Query tidak ditulis ke log di produksi.
+		cfg.Logger = logger.Default.LogMode(logger.Error)
+	}
+	d, err := gorm.Open(postgres.Open(dsn), cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -42,6 +69,13 @@ func Open() (*gorm.DB, error) {
 		return nil, err
 	}
 	return d, nil
+}
+
+// dsnQuote mengutip nilai DSN supaya karakter spesial aman.
+func dsnQuote(v string) string {
+	v = strings.ReplaceAll(v, `\`, `\\`)
+	v = strings.ReplaceAll(v, `'`, `\'`)
+	return "'" + v + "'"
 }
 
 // Migrate membuat seluruh tabel dari schema.sql bila belum ada.
@@ -64,7 +98,7 @@ func Migrate(d *gorm.DB) error {
 		if !newSchema {
 			return fmt.Errorf("tabel lama terdeteksi: jalankan dulu `DROP TABLE IF EXISTS users, hospitals CASCADE;` di DBeaver, lalu jalankan ulang server")
 		}
-		return nil // skema baru sudah terpasang
+		return upgrade(d) // skema baru sudah terpasang
 	}
 
 	return d.Transaction(func(tx *gorm.DB) error {
@@ -75,6 +109,13 @@ func Migrate(d *gorm.DB) error {
 		}
 		return nil
 	})
+}
+
+// upgrade: perubahan skema untuk database yang sudah terpasang (aman dijalankan berulang).
+func upgrade(d *gorm.DB) error {
+	return d.Exec(`ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_status_check;
+		ALTER TABLE actions ADD CONSTRAINT actions_status_check CHECK (status IN ('baru','ditugaskan',
+		'dalam_pengerjaan','menunggu_verifikasi','selesai','ditutup','ditolak','dibuka_kembali'))`).Error
 }
 
 // splitSQL membuang komentar "-- ..." lalu memecah per statement (;).

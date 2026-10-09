@@ -1,30 +1,35 @@
 package seed
 
 import (
+	"errors"
 	"log"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/spkd/medcredix/internal/appenv"
 	"github.com/spkd/medcredix/internal/model"
 )
 
 // Kata sandi semua akun demo (sesuai sheet "Data Uji & Akun").
+// Hanya untuk lokal/UAT.
 const DemoPassword = "medcredix2026"
 
 func s(v string) *string { return &v }
 
-// Run mengisi 2 rumah sakit dan 12 akun demo.
+// Run mengisi 2 rumah sakit, 12 akun demo, lalu seluruh data uji (RunDemoData).
 // Aman dijalankan berulang: data yang sudah ada dilewati (ON CONFLICT DO NOTHING).
 func Run(d *gorm.DB) error {
+	if appenv.IsProduction() {
+		return errors.New("seed demo ditolak: APP_ENV=production")
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(DemoPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
 	pw := string(hash)
 
-	// Hospital harus masuk lebih dulu karena users.hospital_id punya foreign key.
 	// Kode, provinsi, kota, dan jumlah TT RS Medika adalah isian sementara: ganti sesuai data aslimu.
 	hospitals := []model.Hospital{
 		{ID: "h_nusantara", Name: "RS Nusantara Sehat", Code: "RSNS", HospitalClass: s("B"), BedLicensed: 240},
@@ -51,15 +56,17 @@ func Run(d *gorm.DB) error {
 		users[i].Active = true
 	}
 
-	return d.Transaction(func(tx *gorm.DB) error {
+	err = d.Transaction(func(tx *gorm.DB) error {
 		onConflict := clause.OnConflict{DoNothing: true}
 		if err := tx.Clauses(onConflict).Create(&hospitals).Error; err != nil {
 			return err
 		}
-		if err := tx.Clauses(onConflict).Create(&users).Error; err != nil {
-			return err
-		}
-		log.Printf("seed selesai: %d rumah sakit, %d akun (sandi: %s)", len(hospitals), len(users), DemoPassword)
-		return nil
+		return tx.Clauses(onConflict).Create(&users).Error
 	})
+	if err != nil {
+		return err
+	}
+	log.Printf("seed dasar selesai: %d rumah sakit, %d akun demo", len(hospitals), len(users))
+
+	return RunDemoData(d)
 }

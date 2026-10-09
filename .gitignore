@@ -2,3 +2,5 @@
 .env.*
 *.exe
 *.db
+backup-db-medcredix/
+*.dump

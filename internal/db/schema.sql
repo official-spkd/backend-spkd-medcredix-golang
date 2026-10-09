@@ -16,27 +16,27 @@ CREATE TABLE regulation_versions (
     impact_level  VARCHAR(20)
 );
 
--- Tenant
+
 CREATE TABLE hospitals (
     id                 VARCHAR(40)  PRIMARY KEY,
     name               VARCHAR(200) NOT NULL,
     code               VARCHAR(40)  NOT NULL UNIQUE,
-    hospital_class     VARCHAR(5),               -- A/B/C/D
+    hospital_class     VARCHAR(5),               
     province           VARCHAR(80),
     city               VARCHAR(80),
     bed_licensed       INTEGER      NOT NULL DEFAULT 0,
     bpjs_facility_code VARCHAR(30),
     satusehat_org_id   VARCHAR(80),
-    tier               VARCHAR(30),              -- paket langganan
-    onboarding         VARCHAR(30),              -- status onboarding
+    tier               VARCHAR(30),              
+    onboarding         VARCHAR(30),              
     created_at         TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
 CREATE TABLE users (
     id            VARCHAR(40)  PRIMARY KEY,
-    hospital_id   VARCHAR(40)  REFERENCES hospitals(id),  -- NULL untuk super_admin
+    hospital_id   VARCHAR(40)  REFERENCES hospitals(id),  
     email         VARCHAR(190) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,                  -- target produksi: bcrypt/argon2
+    password_hash VARCHAR(255) NOT NULL,                  
     name          VARCHAR(150) NOT NULL,
     title         VARCHAR(120),
     role          VARCHAR(30)  NOT NULL
@@ -65,7 +65,7 @@ CREATE TABLE practitioner_credentials (
     id              VARCHAR(40) PRIMARY KEY,
     practitioner_id VARCHAR(40) NOT NULL REFERENCES practitioners(id),
     hospital_id     VARCHAR(40) NOT NULL REFERENCES hospitals(id),
-    type            VARCHAR(40) NOT NULL,        -- STR / SIP / sertifikat / kewenangan klinis
+    type            VARCHAR(40) NOT NULL,        
     number          VARCHAR(80),
     issue_date      DATE,
     expiry_date     DATE,
@@ -89,7 +89,7 @@ CREATE TABLE credential_documents (
     status         VARCHAR(30)
 );
 
-CREATE TABLE requirements (                       -- Prasyarat Wajib P1-P6
+CREATE TABLE requirements (                       
     id                VARCHAR(40)  PRIMARY KEY,
     hospital_id       VARCHAR(40)  NOT NULL REFERENCES hospitals(id),
     code              VARCHAR(4)   NOT NULL CHECK (code IN ('P1','P2','P3','P4','P5','P6')),
@@ -106,9 +106,9 @@ CREATE TABLE requirements (                       -- Prasyarat Wajib P1-P6
     UNIQUE (hospital_id, code)
 );
 
-CREATE TABLE audit_logs (                         -- immutable: tidak ada UPDATE/DELETE via aplikasi
+CREATE TABLE audit_logs (                         
     id             VARCHAR(40)  PRIMARY KEY,
-    hospital_id    VARCHAR(40)  REFERENCES hospitals(id),  -- NULL untuk aksi super_admin lintas RS
+    hospital_id    VARCHAR(40)  REFERENCES hospitals(id),  
     actor_name     VARCHAR(150) NOT NULL,
     actor_role     VARCHAR(30)  NOT NULL,
     action         VARCHAR(60)  NOT NULL,
@@ -134,15 +134,15 @@ CREATE TABLE compliance_mappings (
     reviewed_at   TIMESTAMPTZ
 );
 
--- ---------------------------------------------------------------------
--- B.2  RISIKO, PERINGATAN, AKSI, KLAIM, LAPORAN (11 entitas)
--- ---------------------------------------------------------------------
+
+
+
 
 CREATE TABLE risks (
     id              VARCHAR(40)  PRIMARY KEY,
     hospital_id     VARCHAR(40)  NOT NULL REFERENCES hospitals(id),
     code            VARCHAR(30)  NOT NULL,
-    category        VARCHAR(40)  NOT NULL,       -- 9 kategori
+    category        VARCHAR(40)  NOT NULL,       
     level           VARCHAR(10)  NOT NULL CHECK (level IN ('kritis','tinggi','sedang','rendah')),
     title           VARCHAR(255) NOT NULL,
     description     TEXT,
@@ -175,18 +175,18 @@ CREATE TABLE alert_rules (
     metric         VARCHAR(80),
     rule_condition VARCHAR(120),
     severity       VARCHAR(10),
-    channels       VARCHAR(80),                  -- in-app, email, whatsapp
+    channels       VARCHAR(80),                  
     active         BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE report_snapshots (
     id           VARCHAR(40)  PRIMARY KEY,
     hospital_id  VARCHAR(40)  NOT NULL REFERENCES hospitals(id),
-    type         VARCHAR(40)  NOT NULL,          -- 6 jenis laporan
+    type         VARCHAR(40)  NOT NULL,          
     title        VARCHAR(255) NOT NULL,
     period       VARCHAR(20),
-    version      VARCHAR(10)  NOT NULL,          -- v1.n
-    audit_ref    VARCHAR(30),                    -- AUD-...
+    version      VARCHAR(10)  NOT NULL,          
+    audit_ref    VARCHAR(30),                    
     content_json JSONB        NOT NULL,
     created_by   VARCHAR(150),
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
@@ -202,17 +202,17 @@ CREATE TABLE notifications (
     is_read     BOOLEAN      NOT NULL DEFAULT FALSE
 );
 
-CREATE TABLE actions (                           -- Action Center
+CREATE TABLE actions (                           
     id              VARCHAR(40)  PRIMARY KEY,
     hospital_id     VARCHAR(40)  NOT NULL REFERENCES hospitals(id),
-    code            VARCHAR(12)  NOT NULL,       -- ACT-nnn berurutan per RS
+    code            VARCHAR(12)  NOT NULL,       
     title           VARCHAR(255) NOT NULL,
     description     TEXT,
     priority        VARCHAR(10)  NOT NULL DEFAULT 'sedang',
     status          VARCHAR(30)  NOT NULL DEFAULT 'baru'
         CHECK (status IN ('baru','ditugaskan','dalam_pengerjaan',
-                          'menunggu_verifikasi','selesai','ditutup')),
-    source_type     VARCHAR(30),                 -- skor/risiko/peringatan/anomali/manual
+                          'menunggu_verifikasi','selesai','ditutup','ditolak','dibuka_kembali')),
+    source_type     VARCHAR(30),                 
     source_ref      VARCHAR(60),
     owner           VARCHAR(120),
     due_date        DATE,
@@ -226,7 +226,7 @@ CREATE TABLE actions (                           -- Action Center
 CREATE TABLE action_events (
     id         VARCHAR(40)  PRIMARY KEY,
     action_id  VARCHAR(40)  NOT NULL REFERENCES actions(id),
-    type       VARCHAR(30)  NOT NULL,            -- dibuat/ditugaskan/status/komentar
+    type       VARCHAR(30)  NOT NULL,            
     from_value VARCHAR(80),
     to_value   VARCHAR(80),
     by_name    VARCHAR(150),
@@ -240,10 +240,10 @@ CREATE TABLE claims (
     claim_number  VARCHAR(60)   NOT NULL,
     sep_number    VARCHAR(60),
     inacbg_code   VARCHAR(20),
-    care_type     VARCHAR(20),                   -- rawat jalan / rawat inap
+    care_type     VARCHAR(20),                   
     billed_amount NUMERIC(16,2),
     status        VARCHAR(30),
-    flags_json    JSONB,                         -- flag inkonsistensi per kategori
+    flags_json    JSONB,                         
     UNIQUE (hospital_id, claim_number)
 );
 
@@ -278,9 +278,9 @@ CREATE TABLE pathway_episodes (
     documented     BOOLEAN
 );
 
--- ---------------------------------------------------------------------
--- B.3  DATA INTELLIGENCE, ANALITIK, KESIAPAN RS (12 entitas)
--- ---------------------------------------------------------------------
+
+
+
 
 CREATE TABLE data_quality_issues (
     id          VARCHAR(40)  PRIMARY KEY,
@@ -288,12 +288,12 @@ CREATE TABLE data_quality_issues (
     dimension   VARCHAR(60),
     title       VARCHAR(255) NOT NULL,
     severity    VARCHAR(10),
-    anomaly     BOOLEAN      NOT NULL DEFAULT FALSE,   -- penanda anomaly flag
+    anomaly     BOOLEAN      NOT NULL DEFAULT FALSE,   
     status      VARCHAR(20)  NOT NULL DEFAULT 'terbuka'
         CHECK (status IN ('terbuka','diperbaiki'))
 );
 
-CREATE TABLE trust_factors (                    -- 9 faktor Trust Score
+CREATE TABLE trust_factors (                    
     id          VARCHAR(40)  PRIMARY KEY,
     hospital_id VARCHAR(40)  NOT NULL REFERENCES hospitals(id),
     factor      VARCHAR(60)  NOT NULL,
@@ -319,7 +319,7 @@ CREATE TABLE score_snapshots (
 CREATE TABLE evidence_items (
     id                VARCHAR(40)  PRIMARY KEY,
     hospital_id       VARCHAR(40)  NOT NULL REFERENCES hospitals(id),
-    ref_type          VARCHAR(30)  NOT NULL,     -- skor/risiko/aksi
+    ref_type          VARCHAR(30)  NOT NULL,     
     ref_id            VARCHAR(40),
     metric            VARCHAR(120),
     metric_value      VARCHAR(80),
@@ -337,14 +337,14 @@ CREATE TABLE digital_indicators (
     metric_value  NUMERIC(10,2),
     threshold     NUMERIC(10,2),
     weight        NUMERIC(5,2),
-    direction     VARCHAR(10),                   -- higher / lower is better
+    direction     VARCHAR(10),                   
     fhir_resource VARCHAR(60)
 );
 
 CREATE TABLE complaint_stats (
     id           VARCHAR(40) PRIMARY KEY,
     hospital_id  VARCHAR(40) NOT NULL REFERENCES hospitals(id),
-    month        VARCHAR(7)  NOT NULL,           -- YYYY-MM
+    month        VARCHAR(7)  NOT NULL,           
     total        INTEGER,
     satisfaction NUMERIC(5,2),
     peer_avg     NUMERIC(5,2),
@@ -355,9 +355,9 @@ CREATE TABLE data_sources (
     id           VARCHAR(40)  PRIMARY KEY,
     hospital_id  VARCHAR(40)  NOT NULL REFERENCES hospitals(id),
     name         VARCHAR(120) NOT NULL,
-    type         VARCHAR(30),                    -- SIMRS / SATUSEHAT / BPJS
+    type         VARCHAR(30),                    
     status       VARCHAR(20),
-    auth_method  VARCHAR(30),                    -- OAuth2 / API Key
+    auth_method  VARCHAR(30),                    
     success_rate NUMERIC(5,2),
     coverage_pct NUMERIC(5,2),
     last_sync_at TIMESTAMPTZ
@@ -409,9 +409,9 @@ CREATE TABLE utilization_stats (
     UNIQUE (hospital_id, month)
 );
 
--- ---------------------------------------------------------------------
--- INDEKS (isolasi tenant + pencarian umum)
--- ---------------------------------------------------------------------
+
+
+
 CREATE INDEX idx_users_hospital        ON users(hospital_id);
 CREATE INDEX idx_practitioners_hosp    ON practitioners(hospital_id);
 CREATE INDEX idx_credentials_hosp      ON practitioner_credentials(hospital_id, status);
