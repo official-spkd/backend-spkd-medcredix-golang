@@ -125,13 +125,20 @@ func Migrate(d *gorm.DB) error {
 
 // upgrade: perubahan skema untuk database yang sudah terpasang (aman dijalankan berulang).
 // CHECK risiko memakai NOT VALID: baris lama tidak diperiksa, hanya data baru.
+// Kolom file_* / storage_key untuk berkas unggahan.
 func upgrade(d *gorm.DB) error {
 	return d.Exec(`ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_status_check;
 		ALTER TABLE actions ADD CONSTRAINT actions_status_check CHECK (status IN ('baru','ditugaskan',
 		'dalam_pengerjaan','menunggu_verifikasi','selesai','ditutup','ditolak','dibuka_kembali'));
 		ALTER TABLE risks DROP CONSTRAINT IF EXISTS risks_status_check;
 		ALTER TABLE risks ADD CONSTRAINT risks_status_check CHECK (status IN ('baru','terbuka','ditinjau',
-		'dalam_pengerjaan','terkelola','teratasi','selesai','ditutup')) NOT VALID`).Error
+		'dalam_pengerjaan','terkelola','teratasi','selesai','ditutup')) NOT VALID;
+		ALTER TABLE requirements ADD COLUMN IF NOT EXISTS file_key VARCHAR(40);
+		ALTER TABLE requirements ADD COLUMN IF NOT EXISTS file_type VARCHAR(40);
+		ALTER TABLE requirements ADD COLUMN IF NOT EXISTS file_size INTEGER;
+		ALTER TABLE credential_documents ADD COLUMN IF NOT EXISTS storage_key VARCHAR(40);
+		ALTER TABLE credential_documents ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMPTZ;
+		CREATE INDEX IF NOT EXISTS idx_cred_docs_cred ON credential_documents(credential_id)`).Error
 }
 
 // splitSQL membuang komentar "-- ..." lalu memecah per statement (;).
