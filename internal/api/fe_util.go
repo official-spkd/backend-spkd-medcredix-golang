@@ -89,7 +89,6 @@ func tv(p *time.Time) interface{} {
 	return *p
 }
 
-
 // parseDate menerima "2026-10-15" atau RFC3339.
 func parseDate(s string) *time.Time {
 	s = strings.TrimSpace(s)
@@ -354,7 +353,8 @@ func feDocument(d model.CredentialDocument, hid string) J {
 	return J{
 		"id": d.ID, "hospitalId": hid, "credentialId": d.CredentialID, "fileName": d.FileName,
 		"fileType": sv(d.FileType), "sizeKb": iv(d.SizeKb), "uploadedById": sv(d.UploadedByID),
-		"uploadedAt": nil, "status": labelP(d.Status), "notes": nil,
+		"uploadedAt": tv(d.UploadedAt), "status": labelP(d.Status), "notes": nil,
+		"hasFile": d.StorageKey != nil && *d.StorageKey != "",
 	}
 }
 
@@ -365,6 +365,7 @@ func feRequirement(r model.Requirement) J {
 		"docType": nil, "validationRule": nil, "evidenceRequired": true, "approvalRequired": true,
 		"responsibleRole": nil, "status": label(r.Status), "docNumber": sv(r.DocNumber),
 		"issuedAt": tv(r.IssuedAt), "docExpiry": tv(r.DocExpiry), "fileName": sv(r.FileName),
+		"hasFile": r.FileKey != nil && *r.FileKey != "", "fileType": sv(r.FileType), "fileSize": iv(r.FileSize),
 		"notes": sv(r.Note), "updatedAt": nil,
 	}
 }
