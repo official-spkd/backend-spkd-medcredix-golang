@@ -1,0 +1,9 @@
+# Jangan pernah masuk image
+.env
+.env.*
+uploads/
+backup-db-medcredix/
+*.dump
+*.exe
+.git/
+.vscode/
