@@ -101,13 +101,15 @@ func (PractitionerCredential) TableName() string { return "practitioner_credenti
 
 // CredentialDocument memetakan tabel credential_documents.
 type CredentialDocument struct {
-	ID           string  `gorm:"column:id;primaryKey" json:"id"`
-	CredentialID string  `gorm:"column:credential_id" json:"credential_id"`
-	FileName     string  `gorm:"column:file_name" json:"file_name"`
-	FileType     *string `gorm:"column:file_type" json:"file_type"`
-	SizeKb       *int    `gorm:"column:size_kb" json:"size_kb"`
-	UploadedByID *string `gorm:"column:uploaded_by_id" json:"uploaded_by_id"`
-	Status       *string `gorm:"column:status" json:"status"`
+	ID           string     `gorm:"column:id;primaryKey" json:"id"`
+	CredentialID string     `gorm:"column:credential_id" json:"credential_id"`
+	FileName     string     `gorm:"column:file_name" json:"file_name"`
+	FileType     *string    `gorm:"column:file_type" json:"file_type"`
+	SizeKb       *int       `gorm:"column:size_kb" json:"size_kb"`
+	UploadedByID *string    `gorm:"column:uploaded_by_id" json:"uploaded_by_id"`
+	Status       *string    `gorm:"column:status" json:"status"`
+	StorageKey   *string    `gorm:"column:storage_key" json:"-"`
+	UploadedAt   *time.Time `gorm:"column:uploaded_at" json:"uploaded_at"`
 }
 
 func (CredentialDocument) TableName() string { return "credential_documents" }
@@ -125,6 +127,9 @@ type Requirement struct {
 	IssuedAt         *time.Time `gorm:"column:issued_at" json:"issued_at"`
 	DocExpiry        *time.Time `gorm:"column:doc_expiry" json:"doc_expiry"`
 	FileName         *string    `gorm:"column:file_name" json:"file_name"`
+	FileKey          *string    `gorm:"column:file_key" json:"-"`
+	FileType         *string    `gorm:"column:file_type" json:"file_type"`
+	FileSize         *int       `gorm:"column:file_size" json:"file_size"`
 	Note             *string    `gorm:"column:note" json:"note"`
 }
 
