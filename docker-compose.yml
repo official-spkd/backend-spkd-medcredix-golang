@@ -1,0 +1,54 @@
+# MedCredix lokal di Docker Desktop: PostgreSQL + backend + frontend.
+# Jalankan dari folder backend: docker compose up -d --build
+# Nilai DB_USER, DB_PASSWORD, DB_NAME, JWT_SECRET diambil dari file .env backend.
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-medcredix}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?isi DB_PASSWORD di .env}
+      POSTGRES_DB: ${DB_NAME:-medcredix}
+      TZ: Asia/Jakarta
+    volumes:
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "5433:5432" # 5433 supaya tidak bentrok dengan PostgreSQL di Windows
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Menimpa nilai .env yang khusus untuk jalan langsung di Windows
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_SSLMODE: disable
+      UPLOAD_DIR: /app/uploads
+      SEED_DEMO: ${SEED_DEMO:-true}
+      TRUSTED_PROXIES: 172.16.0.0/12
+    volumes:
+      - uploads:/app/uploads
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ${FRONTEND_DIR:-../MEDCREDIX_SPKD/frontend} # lokasi folder frontend dari folder backend
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  uploads:
