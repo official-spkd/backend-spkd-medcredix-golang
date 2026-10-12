@@ -86,7 +86,9 @@ CREATE TABLE credential_documents (
     file_type      VARCHAR(40),
     size_kb        INTEGER,
     uploaded_by_id VARCHAR(40)  REFERENCES users(id),
-    status         VARCHAR(30)
+    status         VARCHAR(30),
+    storage_key    VARCHAR(40),                         -- berkas terenkripsi di UPLOAD_DIR
+    uploaded_at    TIMESTAMPTZ
 );
 
 CREATE TABLE requirements (                       
@@ -102,6 +104,9 @@ CREATE TABLE requirements (
     issued_at         DATE,
     doc_expiry        DATE,
     file_name         VARCHAR(255),
+    file_key          VARCHAR(40),                      -- berkas terenkripsi di UPLOAD_DIR
+    file_type         VARCHAR(40),
+    file_size         INTEGER,
     note              TEXT,
     UNIQUE (hospital_id, code)
 );
@@ -419,6 +424,7 @@ CREATE INDEX idx_practitioners_hosp    ON practitioners(hospital_id);
 CREATE INDEX idx_credentials_hosp      ON practitioner_credentials(hospital_id, status);
 CREATE INDEX idx_credentials_expiry    ON practitioner_credentials(expiry_date);
 CREATE INDEX idx_credentials_pract     ON practitioner_credentials(practitioner_id);
+CREATE INDEX idx_cred_docs_cred        ON credential_documents(credential_id);
 CREATE INDEX idx_audit_hosp_time       ON audit_logs(hospital_id, created_at DESC);
 CREATE INDEX idx_audit_entity          ON audit_logs(entity_type, entity_id);
 CREATE INDEX idx_risks_hosp            ON risks(hospital_id, status);
