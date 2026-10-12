@@ -4,3 +4,4 @@
 *.db
 backup-db-medcredix/
 *.dump
+uploads/
