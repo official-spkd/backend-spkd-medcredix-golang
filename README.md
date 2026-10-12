@@ -20,13 +20,14 @@ Satu backend dipakai banyak rumah sakit (multi-tenant). Data tiap RS dipisah, da
 6. [Konfigurasi `.env`](#konfigurasi-env)
 7. [Menjalankan Server](#menjalankan-server)
 8. [Menghubungkan dengan Frontend](#menghubungkan-dengan-frontend)
-9. [Akun Demo](#akun-demo)
-10. [Ringkasan API](#ringkasan-api)
-11. [Peran & Izin](#peran--izin)
-12. [Testing](#testing)
-13. [Deploy ke Produksi](#deploy-ke-produksi)
-14. [Backup Database](#backup-database)
-15. [Troubleshooting](#troubleshooting)
+9. [Menjalankan dengan Docker](#menjalankan-dengan-docker)
+10. [Akun Demo](#akun-demo)
+11. [Ringkasan API](#ringkasan-api)
+12. [Peran & Izin](#peran--izin)
+13. [Testing](#testing)
+14. [Deploy ke Produksi](#deploy-ke-produksi)
+15. [Backup Database](#backup-database)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -41,6 +42,7 @@ Satu backend dipakai banyak rumah sakit (multi-tenant). Data tiap RS dipisah, da
 | golang-jwt | v5 | Token login (HS256) |
 | bcrypt | `golang.org/x/crypto` | Hash password |
 | godotenv | 1.5 | Membaca file `.env` |
+| Docker | Desktop 4.x / Engine 24+ | Opsional, untuk menjalankan semuanya dalam container |
 
 GORM, Gin dan library lain **tidak perlu di-install manual**. Semuanya terdaftar di `go.mod` dan otomatis diunduh oleh Go (lihat [Langkah 4](#4-unduh-dependency)).
 
@@ -56,6 +58,7 @@ backend-spkd-medcredix/
 │   │   ├── router.go           # daftar endpoint + middleware keamanan
 │   │   ├── auth_handler.go     # login + pembatas percobaan login
 │   │   ├── fe_*.go             # endpoint yang dipakai frontend Vue
+│   │   ├── files.go            # unggah & buka dokumen
 │   │   ├── jobs.go             # job otomatis (status kredensial tiap jam)
 │   │   └── ...
 │   ├── auth/                   # JWT, peran & izin (RBAC), isolasi RS
@@ -64,8 +67,12 @@ backend-spkd-medcredix/
 │   ├── model/                  # struct GORM per tabel
 │   ├── scoring/                # mesin perhitungan skor + unit test
 │   ├── seed/                   # data demo (hanya untuk lokal)
+│   ├── storage/                # penyimpanan berkas terenkripsi (AES-256-GCM)
 │   ├── integration/            # klien FHIR (SIMRS / SATUSEHAT)
 │   └── appenv/                 # helper environment
+├── Dockerfile                  # image backend
+├── docker-compose.yml          # PostgreSQL + backend + frontend
+├── .dockerignore               # berkas yang tidak boleh masuk image
 ├── go.mod / go.sum             # daftar dependency
 └── .gitignore
 ```
@@ -283,6 +290,8 @@ TRUSTED_PROXIES=
 | `JWT_SECRET` | Ya di produksi | Kunci tanda tangan token login, minimal 32 karakter |
 | `CORS_ORIGIN` | Tidak | Alamat frontend. Pisahkan dengan koma bila lebih dari satu. |
 | `TRUSTED_PROXIES` | Tidak | IP reverse proxy (misalnya Nginx). Kosongkan bila tidak ada. |
+| `UPLOAD_DIR` | Tidak | Folder berkas unggahan, default `uploads` |
+| `FILE_ENCRYPTION_KEY` | Ya di produksi | Kunci enkripsi berkas (32 byte, base64). Buat dengan `openssl rand -base64 32`. **Jangan sampai hilang**, tanpa kunci yang sama berkas lama tidak bisa dibuka |
 | `SIMRS_FHIR_BASE_URL` | Tidak | URL server FHIR SIMRS. Kosong = Test Koneksi berjalan dalam mode simulasi. |
 | `SIMRS_FHIR_TOKEN` | Tidak | Token server FHIR |
 
@@ -357,6 +366,173 @@ Frontend Vue berjalan di `http://localhost:3000`. Server dev Vite meneruskan sem
 3. Buka <http://localhost:3000>, lalu login dengan salah satu [akun demo](#akun-demo).
 
 Pastikan di `.env` frontend tertulis `VITE_DEMO_MODE=false`.
+
+---
+
+## Menjalankan dengan Docker
+
+Cara ini menjalankan **PostgreSQL, backend, dan frontend** sekaligus dengan satu perintah, tanpa perlu install Go, Node, atau PostgreSQL di komputer.
+
+| Container | Isi | Alamat |
+|---|---|---|
+| `db` | PostgreSQL 18 | `localhost:5433` (DBeaver) |
+| `api` | Backend Go | `http://localhost:8080` (Postman) |
+| `web` | Frontend Vue (hasil build) + Nginx | **http://localhost:8000** |
+
+Frontend meneruskan `/api` ke backend di dalam Docker, jadi tidak perlu CORS.
+
+### 1. Install Docker Desktop
+
+- **Windows:** unduh di <https://www.docker.com/products/docker-desktop/>, pilih **WSL 2** saat instalasi, lalu restart bila diminta.
+- **macOS:** `brew install --cask docker`, atau unduh dari link yang sama.
+
+Buka Docker Desktop dan tunggu sampai muncul **Engine running**.
+
+**Akun Docker (opsional).** Menjalankan container di komputer sendiri tidak butuh akun. Akun hanya perlu untuk [upload image ke Docker Hub](#9-upload-image-ke-docker-hub-opsional).
+1. Daftar di <https://hub.docker.com/signup>. Username hanya boleh huruf kecil dan angka, 4–30 karakter (contoh: `josepar7docker`).
+2. Sign in di Docker Desktop (ikon profil di kanan atas), atau lewat terminal:
+   ```bash
+   docker login
+   ```
+
+Cek instalasi:
+
+```bash
+docker version
+docker compose version
+```
+
+### 2. Susun folder
+
+`docker-compose.yml` ada di folder backend dan membaca folder frontend dari lokasi `../MEDCREDIX_SPKD/frontend`:
+
+```
+backend/
+├── backend-spkd-medcredix/     # repo ini (docker-compose.yml di sini)
+└── MEDCREDIX_SPKD/
+    └── frontend/               # repo frontend (punya Dockerfile + nginx.conf sendiri)
+```
+
+Bila folder frontend kamu ada di tempat lain, tambahkan baris ini di `.env` (pakai garis miring `/`):
+
+```env
+FRONTEND_DIR=C:/lokasi/folder/frontend
+```
+
+### 3. Siapkan `.env`
+
+Compose memakai `.env` yang sama dengan [Konfigurasi `.env`](#konfigurasi-env). Yang wajib terisi: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `JWT_SECRET`.
+
+`DB_HOST`, `DB_PORT`, `DB_SSLMODE`, dan `UPLOAD_DIR` otomatis ditimpa di dalam Docker, jadi `.env` yang sama tetap bisa dipakai untuk `go run`.
+
+### 4. Jalankan
+
+Matikan dulu `go run` dan `npm run dev` bila sedang jalan (port 8080 bisa bentrok), lalu dari folder backend:
+
+```bash
+docker compose up -d --build
+```
+
+Build pertama butuh beberapa menit. Cek status:
+
+```bash
+docker compose ps
+```
+
+`db` dan `api` harus `healthy`, dan `web` harus `Up`. Buka **http://localhost:8000** lalu login dengan [akun demo](#akun-demo).
+
+Database Docker **terpisah** dari PostgreSQL di komputer kamu. Saat pertama jalan isinya kosong, lalu diisi data demo (`SEED_DEMO=true` bawaan compose).
+
+### 5. Perintah sehari-hari
+
+| Mau apa | Perintah |
+|---|---|
+| Lihat log backend | `docker compose logs -f api` |
+| Matikan (data tetap aman) | `docker compose stop` |
+| Nyalakan lagi | `docker compose start` |
+| Setelah ubah kode backend | `docker compose up -d --build api` |
+| Setelah ubah kode frontend | `docker compose up -d --build web` |
+| Hapus container (data tetap aman) | `docker compose down` |
+| Masuk ke database | `docker compose exec db psql -U medcredix -d medcredix` |
+
+Data database dan berkas unggahan disimpan di volume `pgdata` dan `uploads`, jadi tetap ada walau container dihapus atau komputer restart.
+
+> ⚠️ `docker compose down -v` **menghapus seluruh database dan berkas unggahan** di Docker. Jangan dipakai kecuali memang mau mulai dari nol.
+
+### 6. Pindahkan data dari PostgreSQL lokal (opsional)
+
+```bash
+# 1. backup dari PostgreSQL lokal
+pg_dump -U medcredix -h localhost -d medcredix -F c -f backup-db-medcredix/terbaru.dump
+
+# 2. restore ke database Docker
+docker compose stop api
+docker compose cp backup-db-medcredix/terbaru.dump db:/tmp/restore.dump
+docker compose exec db pg_restore -U medcredix -d medcredix --clean --if-exists --no-owner --no-privileges /tmp/restore.dump
+```
+
+Lalu tambahkan `SEED_DEMO=false` di `.env` supaya data demo tidak ditulis ulang, dan nyalakan lagi:
+
+```bash
+docker compose up -d api
+```
+
+### 7. Ganti password akun di Docker
+
+```bash
+docker compose exec db psql -U medcredix -d medcredix -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+docker compose exec db psql -U medcredix -d medcredix -c "UPDATE users SET password_hash = crypt('PasswordBaru123!', gen_salt('bf', 10));"
+```
+
+Tanpa `WHERE`, perintah ini mengganti password **semua** akun. Tambahkan `WHERE email = '...'` untuk satu akun saja.
+
+### 8. Bagikan ke orang lain (opsional)
+
+**Satu jaringan WiFi/kantor:** cari IP komputer (`ipconfig` di Windows, `ipconfig getifaddr en0` di macOS), izinkan port 8000 di firewall, lalu orang lain membuka `http://<IP-komputer>:8000`.
+
+**Lewat internet (Cloudflare Tunnel, gratis):**
+
+```bash
+# Windows
+winget install --id Cloudflare.cloudflared
+# macOS
+brew install cloudflared
+
+cloudflared tunnel --url http://localhost:8000
+```
+
+Bagikan link `https://....trycloudflare.com` yang muncul. API ada di link yang sama (`/api/...`). Tekan **Ctrl+C** untuk mematikan; link langsung tidak bisa dibuka, dan `localhost:8000` tetap jalan.
+
+> **Sebelum membagikan link**, ganti password semua akun demo (langkah 7). Password `medcredix2026` tertulis di halaman login dan di repo publik ini. Link hanya hidup selama komputer menyala, dan berganti setiap kali tunnel dijalankan ulang.
+
+Untuk pemakaian sungguhan, deploy ke server (lihat [Deploy ke Produksi](#deploy-ke-produksi)).
+
+### 9. Upload image ke Docker Hub (opsional)
+
+Supaya orang lain atau server bisa langsung `docker pull` tanpa build ulang. Ganti `josepar7docker` dengan username Docker kamu.
+
+```bash
+docker login
+
+# beri nama image sesuai akun Docker Hub
+docker tag backend-spkd-medcredix-api josepar7docker/medcredix-api:latest
+docker tag backend-spkd-medcredix-web josepar7docker/medcredix-web:latest
+
+# upload
+docker push josepar7docker/medcredix-api:latest
+docker push josepar7docker/medcredix-web:latest
+```
+
+Image muncul di <https://hub.docker.com/u/josepar7docker>. Repository baru di Docker Hub defaultnya **public**. Ubah ke **Private** di *Settings* repository bila tidak ingin bisa diunduh orang lain (akun gratis dapat 1 repository private).
+
+Image **tidak berisi** `.env`, password, data database, atau berkas unggahan karena semuanya dikecualikan lewat `.dockerignore` dan disimpan di volume. Konfigurasi tetap diberikan saat container dijalankan.
+
+Untuk versi berikutnya, pakai tag versi supaya bisa kembali ke versi lama:
+
+```bash
+docker tag backend-spkd-medcredix-api josepar7docker/medcredix-api:1.1.0
+docker push josepar7docker/medcredix-api:1.1.0
+```
 
 ---
 
@@ -442,6 +618,11 @@ Super Admin dan Auditor BPJS bisa memilih RS lewat parameter `?hospitalId=...`. 
 | GET | `/practitioners` | Data tenaga medis |
 | GET, PATCH | `/credentials` | Kredensial: ajukan → verifikasi → tinjau → setujui → aktif |
 | GET, PATCH | `/requirements` | Prasyarat wajib P1–P6 |
+| POST | `/requirements/upload` | Unggah berkas prasyarat (multipart, maks 10 MB) |
+| GET | `/requirements/file?id=` | Buka berkas prasyarat |
+| GET | `/documents` | Daftar dokumen kredensial |
+| POST | `/documents/upload` | Unggah dokumen kredensial (multipart, maks 10 MB) |
+| GET | `/documents/file?id=` | Buka dokumen kredensial |
 | GET, PATCH | `/claims` | Klaim BPJS & anomali |
 | GET | `/clinical?type=` | Pathway, utilization, patient safety |
 | GET | `/compliance` | Kepatuhan regulasi |
@@ -575,6 +756,12 @@ Folder `backup-db-medcredix/` dan file `*.dump` sudah masuk `.gitignore` karena 
 | Log `SLOW SQL >= 200ms` | Membuka koneksi baru ke PostgreSQL lambat, biasanya karena `DB_HOST=localhost` di Windows | Ganti jadi `DB_HOST=127.0.0.1`, restart server. Bila masih lambat, kecualikan folder data PostgreSQL dari scan antivirus. Muncul sekali di request pertama setelah start itu wajar. |
 | Respons `503` "Database sedang tidak dapat diakses" | PostgreSQL mati atau koneksi putus | Nyalakan PostgreSQL. Pengguna tidak ter-logout; cukup ulangi request. |
 | Respons `409` saat ubah status aksi | Status dilompati, misalnya Baru langsung Ditutup | Ikuti urutan di tabel [Peran & Izin](#peran--izin) |
+| Docker: `port is already allocated` | Port 8080 / 8000 / 5433 sudah dipakai, biasanya `go run` masih jalan | Matikan `go run`, atau ganti port di `docker-compose.yml` (misalnya `"8090:8080"`) |
+| Docker: `isi DB_PASSWORD di .env` | `.env` tidak ada atau `DB_PASSWORD` kosong | Buat `.env` di folder backend |
+| Docker: `path ... not found` saat build `web` | Folder frontend tidak di `../MEDCREDIX_SPKD/frontend` | Isi `FRONTEND_DIR` di `.env` |
+| Docker: login gagal padahal password benar | Database Docker terpisah dari PostgreSQL lokal | Pakai password demo, atau [pindahkan data](#6-pindahkan-data-dari-postgresql-lokal-opsional) |
+| `docker push`: `denied: requested access to the resource is denied` | Belum login, atau nama image tidak diawali username Docker Hub | Jalankan `docker login`, lalu pastikan tag berbentuk `username/nama-image` |
+| `cloudflared` tidak dikenali | Terminal dibuka sebelum install | Tutup lalu buka lagi terminal / VS Code |
 | `undefined: ...` saat build | Ada file di `internal/api` yang hilang atau isinya tertukar | Pastikan semua file `fe_*.go` lengkap dan berada di folder `internal/api` |
 
 ---
