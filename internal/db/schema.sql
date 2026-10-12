@@ -151,6 +151,8 @@ CREATE TABLE risks (
     suggested_owner VARCHAR(120),
     deadline        DATE,
     status          VARCHAR(20)  NOT NULL DEFAULT 'baru'
+        CHECK (status IN ('baru','terbuka','ditinjau','dalam_pengerjaan',
+                          'terkelola','teratasi','selesai','ditutup'))
 );
 
 CREATE TABLE early_warnings (

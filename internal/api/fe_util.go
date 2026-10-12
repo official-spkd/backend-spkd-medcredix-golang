@@ -89,12 +89,6 @@ func tv(p *time.Time) interface{} {
 	return *p
 }
 
-func ymd(p *time.Time) string {
-	if p == nil {
-		return "—"
-	}
-	return p.Format("2006-01-02")
-}
 
 // parseDate menerima "2026-10-15" atau RFC3339.
 func parseDate(s string) *time.Time {

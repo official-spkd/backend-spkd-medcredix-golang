@@ -80,7 +80,15 @@ func risksPatchHandler(db *gorm.DB) gin.HandlerFunc {
 		}
 		upd := map[string]interface{}{}
 		if body.Status != "" {
-			upd["status"] = codeOf(body.Status)
+			st := codeOf(body.Status)
+			if !riskStatuses[st] {
+				fail(c, http.StatusBadRequest, "Status risiko tidak dikenal.")
+				return
+			}
+			if riskClosed[st] && !requirePerm(c, db, user, hid, auth.PermResolve, "risks", r.ID) {
+				return
+			}
+			upd["status"] = st
 		} else if body.Action == "ack" {
 			upd["status"] = "ditinjau"
 		}
@@ -193,10 +201,25 @@ func warningsPatchHandler(db *gorm.DB) gin.HandlerFunc {
 
 // ---------- Action Center ----------
 
-// Status aksi yang diizinkan (CHECK di schema.sql).
-var actionStatuses = map[string]bool{
-	"baru": true, "ditugaskan": true, "dalam_pengerjaan": true, "menunggu_verifikasi": true,
-	"selesai": true, "ditutup": true, "ditolak": true, "dibuka_kembali": true,
+// actionFlow: status asal yang boleh menuju status tujuan + izin yang dibutuhkan.
+// Aksi tidak bisa lompat (mis. "baru" langsung "ditutup").
+var actionFlow = map[string]transition{
+	"ditugaskan":          {[]string{"baru", "dibuka_kembali"}, "ditugaskan", auth.PermAssign},
+	"dalam_pengerjaan":    {[]string{"baru", "ditugaskan", "menunggu_verifikasi", "dibuka_kembali"}, "dalam_pengerjaan", auth.PermEdit},
+	"menunggu_verifikasi": {[]string{"dalam_pengerjaan"}, "menunggu_verifikasi", auth.PermEdit},
+	"selesai":             {[]string{"menunggu_verifikasi"}, "selesai", auth.PermResolve},
+	"ditutup":             {[]string{"selesai"}, "ditutup", auth.PermResolve},
+	"ditolak":             {[]string{"baru", "ditugaskan", "dalam_pengerjaan", "menunggu_verifikasi"}, "ditolak", auth.PermResolve},
+	"dibuka_kembali":      {[]string{"selesai", "ditutup", "ditolak"}, "dibuka_kembali", auth.PermReopen},
+}
+
+func contains(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 func addActionEvent(tx *gorm.DB, actionID, typ, from, to, by, note string) error {
@@ -399,12 +422,17 @@ func actionsPatchHandler(db *gorm.DB) gin.HandlerFunc {
 				_ = addActionEvent(db, a.ID, "ditugaskan", str(a.Owner), owner, user.Name, note)
 			}
 		case "status":
-			if !requirePerm(c, db, user, hid, auth.PermEdit, "actions", a.ID) {
+			to := codeOf(body.Status)
+			t, known := actionFlow[to]
+			if !known {
+				fail(c, http.StatusBadRequest, fmt.Sprintf("Status aksi tidak bisa diubah ke %q.", label(to)))
 				return
 			}
-			to := codeOf(body.Status)
-			if !actionStatuses[to] {
-				fail(c, http.StatusBadRequest, "Status aksi tidak dikenal.")
+			if !requirePerm(c, db, user, hid, t.perm, "actions", a.ID) {
+				return
+			}
+			if !contains(t.from, a.Status) {
+				fail(c, http.StatusConflict, fmt.Sprintf("Status %q tidak bisa langsung diubah ke %q.", label(a.Status), label(to)))
 				return
 			}
 			upd := map[string]interface{}{"status": to}

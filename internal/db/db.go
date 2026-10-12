@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -65,6 +66,17 @@ func Open() (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Pool koneksi: default Go hanya menyimpan 2 koneksi idle, sisanya dibuka-tutup
+	// tiap request. Di Windows membuka koneksi PostgreSQL itu mahal, jadi request terasa lambat.
+	sqlDB, err := d.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.SetMaxOpenConns(appenv.Int("DB_MAX_OPEN_CONNS", 25))
+	sqlDB.SetMaxIdleConns(appenv.Int("DB_MAX_IDLE_CONNS", 10))
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
 	if err := Migrate(d); err != nil {
 		return nil, err
 	}
@@ -112,10 +124,14 @@ func Migrate(d *gorm.DB) error {
 }
 
 // upgrade: perubahan skema untuk database yang sudah terpasang (aman dijalankan berulang).
+// CHECK risiko memakai NOT VALID: baris lama tidak diperiksa, hanya data baru.
 func upgrade(d *gorm.DB) error {
 	return d.Exec(`ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_status_check;
 		ALTER TABLE actions ADD CONSTRAINT actions_status_check CHECK (status IN ('baru','ditugaskan',
-		'dalam_pengerjaan','menunggu_verifikasi','selesai','ditutup','ditolak','dibuka_kembali'))`).Error
+		'dalam_pengerjaan','menunggu_verifikasi','selesai','ditutup','ditolak','dibuka_kembali'));
+		ALTER TABLE risks DROP CONSTRAINT IF EXISTS risks_status_check;
+		ALTER TABLE risks ADD CONSTRAINT risks_status_check CHECK (status IN ('baru','terbuka','ditinjau',
+		'dalam_pengerjaan','terkelola','teratasi','selesai','ditutup')) NOT VALID`).Error
 }
 
 // splitSQL membuang komentar "-- ..." lalu memecah per statement (;).

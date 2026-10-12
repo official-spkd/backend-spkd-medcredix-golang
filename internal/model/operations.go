@@ -1,4 +1,3 @@
-// Kode dihasilkan dari medcredix_erd.sql (SRS Appendix B). Skema asli ada di internal/db/schema.sql.
 package model
 
 import (

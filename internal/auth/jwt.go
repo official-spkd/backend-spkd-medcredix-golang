@@ -85,10 +85,53 @@ func GenerateToken(userID, hospitalID, role string) (string, time.Time, error) {
 			ExpiresAt: jwt.NewNumericDate(exp),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
+			ID:        model.NewID("jti"), // dipakai untuk mencabut token saat logout
 		},
 	}
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(jwtSecret())
 	return signed, exp, err
+}
+
+// ---------- daftar token yang sudah logout ----------
+// Disimpan di memori sampai token kedaluwarsa. Catatan: hilang saat server restart dan
+// tidak dibagi antar-instance; untuk banyak server pindahkan ke Redis / tabel database.
+
+var (
+	revokedMu sync.Mutex
+	revoked   = map[string]time.Time{} // jti -> waktu kedaluwarsa token
+)
+
+// Revoke mencabut token (dipanggil saat logout).
+func Revoke(jti string, exp time.Time) {
+	if jti == "" {
+		return
+	}
+	revokedMu.Lock()
+	defer revokedMu.Unlock()
+	now := time.Now()
+	for k, t := range revoked { // buang entri yang tokennya sudah kedaluwarsa
+		if now.After(t) {
+			delete(revoked, k)
+		}
+	}
+	revoked[jti] = exp
+}
+
+func isRevoked(jti string) bool {
+	revokedMu.Lock()
+	defer revokedMu.Unlock()
+	_, ok := revoked[jti]
+	return ok
+}
+
+// CurrentClaims mengambil klaim token yang sudah divalidasi oleh Wrap().
+func CurrentClaims(c *gin.Context) (*Claims, bool) {
+	v, ok := c.Get("claims")
+	if !ok {
+		return nil, false
+	}
+	cl, ok := v.(*Claims)
+	return cl, ok
 }
 
 func deny(c *gin.Context, msg string) {
@@ -118,15 +161,25 @@ func Wrap(db *gorm.DB) gin.HandlerFunc {
 			deny(c, "Token kedaluwarsa atau dimanipulasi.")
 			return
 		}
+		if isRevoked(claims.ID) {
+			deny(c, "Sesi sudah keluar. Silakan masuk kembali.")
+			return
+		}
 
 		var user model.User
 		if err := db.First(&user, "id = ? AND active = ?", claims.UserID, true).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				// Database bermasalah: jangan balas 401, nanti frontend mengira sesi habis dan logout.
+				c.AbortWithStatusJSON(503, gin.H{"ok": false, "error": "Database sedang tidak dapat diakses. Coba lagi sebentar."})
+				return
+			}
 			deny(c, "Akun tidak ditemukan atau telah dinonaktifkan.")
 			return
 		}
 
 		// Peran & RS selalu diambil dari database, bukan dari klaim token.
 		c.Set("user", user)
+		c.Set("claims", claims)
 		c.Next()
 	}
 }

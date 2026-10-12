@@ -2,6 +2,7 @@ package appenv
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -21,4 +22,13 @@ func Bool(key string) bool {
 		return true
 	}
 	return false
+}
+
+// Int membaca env angka positif; bila kosong / tidak valid memakai def.
+func Int(key string, def int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv(key)))
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }

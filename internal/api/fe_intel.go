@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -285,13 +286,57 @@ func feIntel(db *gorm.DB, hid string, in scoring.Intelligence) J {
 	}
 }
 
+// ---------- cache hasil hitung skor ----------
+// Bootstrap, dashboard dan halaman lain menghitung skor yang sama berkali-kali (±25 query).
+// Hasil disimpan sebentar per RS, lalu dibuang setiap ada perubahan data lewat API
+// (lihat invalidateIntel di router.go). Perubahan langsung via DBeaver terlihat maks. intelTTL kemudian.
+
+const intelTTL = 30 * time.Second
+
+type intelEntry struct {
+	in    scoring.Intelligence
+	fe    J
+	at    time.Time
+	epoch uint64
+}
+
+var (
+	intelMu    sync.Mutex
+	intelCache = map[string]intelEntry{}
+	intelEpoch uint64
+)
+
+// invalidateIntel membuang semua cache skor (dipanggil setelah request yang mengubah data).
+func invalidateIntel() {
+	intelMu.Lock()
+	intelEpoch++
+	intelCache = map[string]intelEntry{}
+	intelMu.Unlock()
+}
+
 // computeFE menghitung intel satu RS (scoring engine) dan memetakannya ke bentuk frontend.
+// Hasil yang dikembalikan dipakai bersama: pemanggil hanya boleh membaca, tidak mengubah.
 func computeFE(db *gorm.DB, hid string) (scoring.Intelligence, J, error) {
+	intelMu.Lock()
+	e, hit := intelCache[hid]
+	epoch := intelEpoch
+	intelMu.Unlock()
+	if hit && time.Since(e.at) < intelTTL {
+		return e.in, e.fe, nil
+	}
+
 	in, err := scoring.ComputeIntel(db, hid)
 	if err != nil {
 		return in, nil, err
 	}
-	return in, feIntel(db, hid, in), nil
+	fe := feIntel(db, hid, in)
+
+	intelMu.Lock()
+	if epoch == intelEpoch { // jangan simpan hasil yang dihitung sebelum data berubah
+		intelCache[hid] = intelEntry{in: in, fe: fe, at: time.Now(), epoch: epoch}
+	}
+	intelMu.Unlock()
+	return in, fe, nil
 }
 
 // domainRecs: rekomendasi otomatis dari indikator yang belum mencapai ambang.

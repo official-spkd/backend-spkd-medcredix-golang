@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -48,6 +49,9 @@ func main() {
 	default:
 		log.Println("seed demo dilewati (set SEED_DEMO=true untuk mengisi data uji di lokal)")
 	}
+
+	// Status kredensial (segera berakhir / kedaluwarsa) diperbarui otomatis tiap jam.
+	api.StartCredentialJob(context.Background(), database)
 
 	r, err := api.NewRouter(database)
 	if err != nil {

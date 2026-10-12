@@ -16,9 +16,17 @@ import (
 
 var openActionStatuses = []string{"baru", "ditugaskan", "dalam_pengerjaan", "menunggu_verifikasi", "dibuka_kembali"}
 
+// Status risiko yang diizinkan (sama dengan CHECK di schema.sql). riskClosed = risiko sudah tertangani.
+var riskStatuses = map[string]bool{
+	"baru": true, "terbuka": true, "ditinjau": true, "dalam_pengerjaan": true,
+	"terkelola": true, "teratasi": true, "selesai": true, "ditutup": true,
+}
+var riskClosed = map[string]bool{"teratasi": true, "selesai": true, "ditutup": true}
+var riskClosedList = []string{"teratasi", "selesai", "ditutup"}
+
 func badgesOf(db *gorm.DB, hid string) J {
 	var risks, warnings, actions int64
-	db.Model(&model.Risk{}).Where("hospital_id = ? AND status NOT IN ?", hid, []string{"selesai", "teratasi", "ditutup"}).Count(&risks)
+	db.Model(&model.Risk{}).Where("hospital_id = ? AND status NOT IN ?", hid, riskClosedList).Count(&risks)
 	db.Model(&model.EarlyWarning{}).Where("hospital_id = ? AND status = ?", hid, "baru").Count(&warnings)
 	db.Model(&model.Action{}).Where("hospital_id = ? AND status IN ?", hid, openActionStatuses).Count(&actions)
 	return J{"risks": risks, "warnings": warnings, "actions": actions}
@@ -124,7 +132,7 @@ func dashboardHandler(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var riskRows []model.Risk
-		db.Where("hospital_id = ? AND status NOT IN ?", hid, []string{"ditutup", "selesai"}).Order("code").Find(&riskRows)
+		db.Where("hospital_id = ? AND status NOT IN ?", hid, riskClosedList).Order("code").Find(&riskRows)
 		risks := make([]J, 0, len(riskRows))
 		summary := J{"tinggi": 0, "sedang": 0, "rendah": 0}
 		for _, r := range riskRows {
@@ -220,7 +228,7 @@ func scoresHandler(db *gorm.DB) gin.HandlerFunc {
 
 		openRisks := func(limit int) []J {
 			var rows []model.Risk
-			q := db.Where("hospital_id = ? AND status NOT IN ?", hid, []string{"ditutup", "selesai"}).Order("code")
+			q := db.Where("hospital_id = ? AND status NOT IN ?", hid, riskClosedList).Order("code")
 			if limit > 0 {
 				q = q.Limit(limit)
 			}

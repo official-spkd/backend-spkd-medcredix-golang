@@ -141,6 +141,17 @@ func tenantID(c *gin.Context, db *gorm.DB) (model.User, string, bool) {
 	return user, hid, true
 }
 
+// refreshIntelOnWrite membuang cache skor setelah request yang berhasil mengubah data,
+// supaya dashboard langsung menampilkan angka terbaru.
+func refreshIntelOnWrite() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+		if c.Request.Method != http.MethodGet && c.Writer.Status() < 400 {
+			invalidateIntel()
+		}
+	}
+}
+
 // NewRouter merakit semua endpoint.
 func NewRouter(db *gorm.DB) (*gin.Engine, error) {
 	r := gin.New()
@@ -158,8 +169,10 @@ func NewRouter(db *gorm.DB) (*gin.Engine, error) {
 	api.GET("/health", func(c *gin.Context) { ok(c, gin.H{"status": "up"}) })
 	api.POST("/auth", loginHandler(db)) // satu-satunya endpoint tanpa Wrap
 
-	s := api.Group("", auth.Wrap(db))
+	s := api.Group("", auth.Wrap(db), refreshIntelOnWrite())
 	view := auth.RequirePermission(auth.PermView)
+
+	s.POST("/auth/logout", logoutHandler(db))
 
 	// Baca (izin VIEW, semua terisolasi per RS)
 	s.GET("/bootstrap", view, bootstrapHandler(db))

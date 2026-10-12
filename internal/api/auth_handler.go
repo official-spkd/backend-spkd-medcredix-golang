@@ -167,3 +167,21 @@ func loginHandler(db *gorm.DB) gin.HandlerFunc {
 		ok(c, gin.H{"token": token, "expiresAt": exp, "user": sessionOf(user)})
 	}
 }
+
+// ---------- POST /api/auth/logout ----------
+// Token yang dipakai dicabut di server, jadi tidak bisa dipakai lagi walau belum 12 jam.
+
+func logoutHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, _ := auth.CurrentUser(c)
+		if cl, found := auth.CurrentClaims(c); found && cl.ExpiresAt != nil {
+			auth.Revoke(cl.ID, cl.ExpiresAt.Time)
+		}
+		hid := ""
+		if user.HospitalID != nil {
+			hid = *user.HospitalID
+		}
+		_ = audit.Log(db, user, hid, "logout", "users", user.ID, "Logout", metaOf(c))
+		ok(c, gin.H{"loggedOut": true})
+	}
+}
