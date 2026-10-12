@@ -15,6 +15,7 @@ import (
 	"github.com/spkd/medcredix/internal/auth"
 	"github.com/spkd/medcredix/internal/db"
 	"github.com/spkd/medcredix/internal/seed"
+	"github.com/spkd/medcredix/internal/storage"
 )
 
 func main() {
@@ -30,6 +31,11 @@ func main() {
 	// Cek JWT_SECRET sebelum server jalan.
 	if err := auth.CheckConfig(); err != nil {
 		log.Fatal("konfigurasi keamanan: ", err)
+	}
+
+	// Penyimpanan berkas unggahan (terenkripsi).
+	if err := storage.Init(); err != nil {
+		log.Fatal("penyimpanan berkas: ", err)
 	}
 
 	database, err := db.Open()
