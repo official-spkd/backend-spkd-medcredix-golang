@@ -18,4 +18,6 @@ var credTransitions = map[string]transition{
 	"activate":   {[]string{"disetujui"}, "aktif", auth.PermApprove},
 	"suspend":    {[]string{"aktif", "segera_berakhir"}, "ditangguhkan", auth.PermApprove},
 	"reactivate": {[]string{"ditangguhkan"}, "aktif", auth.PermApprove},
+	// Komite menolak pengajuan: kredensial ditahan (ditangguhkan) sampai diajukan ulang.
+	"reject": {[]string{"tinjauan_komite"}, "ditangguhkan", auth.PermApprove},
 }
