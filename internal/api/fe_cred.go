@@ -239,7 +239,7 @@ func requirementsPatchHandler(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		perm := auth.PermEdit
-		if body.Action == "verify" {
+		if body.Action == "verify" || body.Action == "invalidate" {
 			perm = auth.PermVerify
 		}
 		if !requirePerm(c, db, user, hid, perm, "requirements", r.ID) {
@@ -248,6 +248,11 @@ func requirementsPatchHandler(db *gorm.DB) gin.HandlerFunc {
 		updates := map[string]interface{}{}
 		switch body.Action {
 		case "submit":
+			// Pengajuan wajib punya berkas (unggah lewat POST /requirements/upload).
+			if r.FileKey == nil || *r.FileKey == "" {
+				fail(c, http.StatusBadRequest, "Unggah berkas dokumen dulu sebelum diajukan.")
+				return
+			}
 			updates["status"] = "menunggu_verifikasi"
 		case "verify":
 			if r.Status != "menunggu_verifikasi" {
