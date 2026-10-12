@@ -56,6 +56,7 @@ backend-spkd-medcredix/
 │   │   ├── router.go           # daftar endpoint + middleware keamanan
 │   │   ├── auth_handler.go     # login + pembatas percobaan login
 │   │   ├── fe_*.go             # endpoint yang dipakai frontend Vue
+│   │   ├── jobs.go             # job otomatis (status kredensial tiap jam)
 │   │   └── ...
 │   ├── auth/                   # JWT, peran & izin (RBAC), isolasi RS
 │   ├── audit/                  # pencatatan audit trail
@@ -258,7 +259,7 @@ APP_ENV=development
 SEED_DEMO=true
 MEDCREDIX_PORT=8080
 
-DB_HOST=localhost
+DB_HOST=127.0.0.1
 DB_PORT=5432
 DB_USER=medcredix
 DB_PASSWORD=ganti-dengan-password-kamu
@@ -275,9 +276,10 @@ TRUSTED_PROXIES=
 | `APP_ENV` | Ya | `development` atau `production` |
 | `SEED_DEMO` | Tidak | `true` = isi data & akun demo. **Dilarang** `true` di produksi. |
 | `MEDCREDIX_PORT` | Tidak | Port server, default `8080` |
-| `DB_HOST` / `DB_PORT` | Ya | Alamat PostgreSQL |
+| `DB_HOST` / `DB_PORT` | Ya | Alamat PostgreSQL. Di komputer yang sama pakai `127.0.0.1` (lebih cepat dari `localhost` di Windows) |
 | `DB_USER` / `DB_PASSWORD` / `DB_NAME` | Ya | Akun & nama database dari langkah 2 |
 | `DB_SSLMODE` | Tidak | `disable` untuk lokal, `require` untuk produksi |
+| `DB_MAX_OPEN_CONNS` / `DB_MAX_IDLE_CONNS` | Tidak | Ukuran pool koneksi database, default `25` / `10` |
 | `JWT_SECRET` | Ya di produksi | Kunci tanda tangan token login, minimal 32 karakter |
 | `CORS_ORIGIN` | Tidak | Alamat frontend. Pisahkan dengan koma bila lebih dari satu. |
 | `TRUSTED_PROXIES` | Tidak | IP reverse proxy (misalnya Nginx). Kosongkan bila tidak ada. |
@@ -332,6 +334,13 @@ Saat server berjalan pertama kali:
 - semua tabel dibuat otomatis;
 - bila `SEED_DEMO=true`, data demo (2 RS dan 12 akun) ikut diisi;
 - pada start berikutnya, data yang sudah ada **tidak ditimpa**.
+
+Setiap kali server jalan, dan setelah itu tiap 1 jam, status kredensial diperbarui otomatis:
+
+- `aktif` → `segera_berakhir` bila masa berlaku tinggal ≤ 90 hari;
+- `aktif` / `segera_berakhir` → `kedaluwarsa` bila tanggalnya sudah lewat.
+
+Perubahan ini tercatat di `audit_logs` dengan aktor **Sistem MedCredix**.
 
 ---
 
@@ -410,6 +419,10 @@ Respons login berisi `token`. Kirim token itu di setiap request berikutnya:
 Authorization: Bearer <token>
 ```
 
+Token berlaku 12 jam. Untuk logout, panggil `POST /api/auth/logout` dengan token yang sama. Token itu langsung dicabut dan tidak bisa dipakai lagi.
+
+> Daftar token yang sudah logout disimpan di memori server. Bila server di-restart, daftar ini kosong lagi.
+
 Super Admin dan Auditor BPJS bisa memilih RS lewat parameter `?hospitalId=...`. Peran lain otomatis terkunci ke RS miliknya.
 
 ### Daftar endpoint
@@ -418,6 +431,7 @@ Super Admin dan Auditor BPJS bisa memilih RS lewat parameter `?hospitalId=...`. 
 |---|---|---|
 | GET | `/health` | Cek server hidup |
 | POST | `/auth` | Login |
+| POST | `/auth/logout` | Logout, token dicabut di server |
 | GET | `/bootstrap` | Data awal: user, RS, badge, notifikasi |
 | GET | `/dashboard` | Ringkasan skor, risiko, warning, aksi |
 | GET | `/scores?domain=` | Detail skor per domain |
@@ -461,6 +475,19 @@ Aturan tambahan:
 
 - Pengguna yang memverifikasi sebuah kredensial **tidak boleh** menyetujui kredensial yang sama (segregation of duties).
 - Status kredensial harus berurutan. Contohnya, status `diajukan` tidak bisa langsung menjadi `aktif`.
+- Status aksi juga harus berurutan:
+
+  | Ke status | Boleh dari | Izin |
+  |---|---|---|
+  | Ditugaskan | Baru, Dibuka Kembali | ASSIGN |
+  | Dalam Pengerjaan | Baru, Ditugaskan, Menunggu Verifikasi, Dibuka Kembali | EDIT |
+  | Menunggu Verifikasi | Dalam Pengerjaan | EDIT |
+  | Selesai | Menunggu Verifikasi | RESOLVE |
+  | Ditutup | Selesai | RESOLVE |
+  | Ditolak | Baru, Ditugaskan, Dalam Pengerjaan, Menunggu Verifikasi | RESOLVE |
+  | Dibuka Kembali | Selesai, Ditutup, Ditolak | REOPEN |
+
+- Status risiko hanya boleh salah satu dari `baru`, `terbuka`, `ditinjau`, `dalam_pengerjaan`, `terkelola`, `teratasi`, `selesai`, `ditutup`. Menutup risiko (`teratasi`, `selesai`, `ditutup`) butuh izin RESOLVE.
 
 ---
 
@@ -472,6 +499,19 @@ go test ./...
 ```
 
 Unit test ada di `internal/scoring` dan memeriksa rumus perhitungan skor.
+
+### Postman
+
+Collection `MedCredix_API_Test.postman_collection.json` berisi tes login, isolasi RS, kredensial, skor, logout, alur status aksi dan risiko, serta kecepatan respons.
+
+1. Postman → **Import** → pilih file collection.
+2. Pastikan variabel `base_url` bernilai `http://localhost:8080`.
+3. Klik kanan sebuah folder → **Run folder**.
+
+### Performa
+
+- Hasil hitung skor disimpan 30 detik per rumah sakit, dan langsung dibuang setiap ada perubahan data lewat API. Perubahan langsung lewat DBeaver baru terlihat maksimal 30 detik kemudian.
+- Koneksi database dipakai ulang lewat pool (lihat `DB_MAX_OPEN_CONNS`).
 
 ---
 
@@ -532,6 +572,9 @@ Folder `backup-db-medcredix/` dan file `*.dump` sudah masuk `.gitignore` karena 
 | `pg_dump` / `psql` tidak dikenali | Folder `bin` PostgreSQL belum ada di PATH | Ikuti langkah PATH di bagian [Prasyarat](#prasyarat) sesuai OS, lalu buka terminal baru |
 | `JWT_SECRET terlalu pendek` | Secret kurang dari 32 karakter | Buat secret baru (lihat [Membuat `JWT_SECRET`](#membuat-jwt_secret)) |
 | Frontend: `Tidak dapat terhubung ke server` | Backend belum jalan atau port berbeda | Jalankan backend di port 8080, lalu restart `npm run dev` |
+| Log `SLOW SQL >= 200ms` | Membuka koneksi baru ke PostgreSQL lambat, biasanya karena `DB_HOST=localhost` di Windows | Ganti jadi `DB_HOST=127.0.0.1`, restart server. Bila masih lambat, kecualikan folder data PostgreSQL dari scan antivirus. Muncul sekali di request pertama setelah start itu wajar. |
+| Respons `503` "Database sedang tidak dapat diakses" | PostgreSQL mati atau koneksi putus | Nyalakan PostgreSQL. Pengguna tidak ter-logout; cukup ulangi request. |
+| Respons `409` saat ubah status aksi | Status dilompati, misalnya Baru langsung Ditutup | Ikuti urutan di tabel [Peran & Izin](#peran--izin) |
 | `undefined: ...` saat build | Ada file di `internal/api` yang hilang atau isinya tertukar | Pastikan semua file `fe_*.go` lengkap dan berada di folder `internal/api` |
 
 ---
