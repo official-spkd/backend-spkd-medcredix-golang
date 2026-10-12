@@ -94,11 +94,15 @@ func securityHeaders() gin.HandlerFunc {
 	}
 }
 
-// maxBody membatasi ukuran body request.
+// maxBody membatasi ukuran body request. Endpoint unggah (/upload) boleh sampai uploadLimit.
 func maxBody(n int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Body != nil {
-			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, n)
+			limit := n
+			if strings.HasSuffix(c.Request.URL.Path, "/upload") {
+				limit = uploadLimit
+			}
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		}
 		c.Next()
 	}
@@ -185,6 +189,9 @@ func NewRouter(db *gorm.DB) (*gin.Engine, error) {
 	s.GET("/practitioners", view, practitionersGetHandler(db))
 	s.GET("/credentials", view, credentialsGetHandler(db))
 	s.GET("/requirements", view, requirementsGetHandler(db))
+	s.GET("/requirements/file", view, requirementsFileHandler(db))
+	s.GET("/documents", view, documentsGetHandler(db))
+	s.GET("/documents/file", view, documentsFileHandler(db))
 	s.GET("/claims", view, claimsGetHandler(db))
 	s.GET("/clinical", view, clinicalGetHandler(db))
 	s.GET("/compliance", view, complianceGetHandler(db))
@@ -202,6 +209,8 @@ func NewRouter(db *gorm.DB) (*gin.Engine, error) {
 	s.PATCH("/actions", actionsPatchHandler(db))
 	s.PATCH("/credentials", credentialsPatchHandler(db))
 	s.PATCH("/requirements", requirementsPatchHandler(db))
+	s.POST("/requirements/upload", requirementsUploadHandler(db))
+	s.POST("/documents/upload", documentsUploadHandler(db))
 	s.PATCH("/claims", claimsPatchHandler(db))
 	s.POST("/reports", reportsPostHandler(db))
 	s.PATCH("/settings", settingsPatchHandler(db))
