@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -301,10 +302,19 @@ type intelEntry struct {
 }
 
 var (
-	intelMu    sync.Mutex
-	intelCache = map[string]intelEntry{}
-	intelEpoch uint64
+	intelMu     sync.Mutex
+	intelCache  = map[string]intelEntry{}
+	intelEpoch  uint64
+	intelFlight = map[string]*intelCall{} // hitungan yang sedang berjalan, per RS+epoch
 )
+
+// intelCall: satu hitungan skor yang ditunggu bersama oleh request lain (cegah cache stampede).
+type intelCall struct {
+	wg  sync.WaitGroup
+	in  scoring.Intelligence
+	fe  J
+	err error
+}
 
 // invalidateIntel membuang semua cache skor (dipanggil setelah request yang mengubah data).
 func invalidateIntel() {
@@ -315,28 +325,41 @@ func invalidateIntel() {
 }
 
 // computeFE menghitung intel satu RS (scoring engine) dan memetakannya ke bentuk frontend.
-// Hasil yang dikembalikan dipakai bersama: pemanggil hanya boleh membaca, tidak mengubah.
+// Kalau banyak request datang bersamaan saat cache kosong, hanya satu yang menghitung,
+// sisanya menunggu hasil yang sama. Hasil dipakai bersama: pemanggil hanya boleh membaca.
 func computeFE(db *gorm.DB, hid string) (scoring.Intelligence, J, error) {
 	intelMu.Lock()
 	e, hit := intelCache[hid]
-	epoch := intelEpoch
-	intelMu.Unlock()
 	if hit && time.Since(e.at) < intelTTL {
+		intelMu.Unlock()
 		return e.in, e.fe, nil
 	}
-
-	in, err := scoring.ComputeIntel(db, hid)
-	if err != nil {
-		return in, nil, err
+	epoch := intelEpoch
+	key := hid + "#" + strconv.FormatUint(epoch, 10)
+	if c, ok := intelFlight[key]; ok {
+		intelMu.Unlock()
+		c.wg.Wait()
+		return c.in, c.fe, c.err
 	}
-	fe := feIntel(db, hid, in)
-
-	intelMu.Lock()
-	if epoch == intelEpoch { // jangan simpan hasil yang dihitung sebelum data berubah
-		intelCache[hid] = intelEntry{in: in, fe: fe, at: time.Now(), epoch: epoch}
-	}
+	c := &intelCall{}
+	c.wg.Add(1)
+	intelFlight[key] = c
 	intelMu.Unlock()
-	return in, fe, nil
+
+	defer func() {
+		intelMu.Lock()
+		delete(intelFlight, key)
+		if c.err == nil && c.fe != nil && epoch == intelEpoch { // jangan simpan hasil dari sebelum data berubah
+			intelCache[hid] = intelEntry{in: c.in, fe: c.fe, at: time.Now(), epoch: epoch}
+		}
+		intelMu.Unlock()
+		c.wg.Done()
+	}()
+	c.in, c.err = scoring.ComputeIntel(db, hid)
+	if c.err == nil {
+		c.fe = feIntel(db, hid, c.in)
+	}
+	return c.in, c.fe, c.err
 }
 
 // domainRecs: rekomendasi otomatis dari indikator yang belum mencapai ambang.
