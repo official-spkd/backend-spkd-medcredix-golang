@@ -12,7 +12,7 @@ import (
 // Data Intelligence + kesiapan RS. Angka dipilih agar mendekati baseline sheet "Data Uji & Akun";
 // nilai skor final tetap harus dihitung oleh scoring engine (internal/scoring), bukan dari seed ini.
 func seedIntelligence(tx *gorm.DB) error {
-	// ---- isu kualitas data: 10 (5 terbuka), anomaly flag aktif = 1 (+1 "Gap Encounter" sudah diperbaiki)
+	// isu kualitas data: 10 (5 terbuka), anomaly flag aktif = 1 (+1 "Gap Encounter" sudah diperbaiki)
 	type dq struct {
 		dim, title, sev, status string
 		anomaly                 bool
@@ -38,7 +38,7 @@ func seedIntelligence(tx *gorm.DB) error {
 		return err
 	}
 
-	// ---- 9 faktor Trust Score (bobot total 100, rata-rata berbobot ~92,3)
+	// 9 faktor Trust Score (bobot total 100, rata-rata berbobot ~92,3)
 	factors := []struct {
 		name          string
 		score, weight float64
@@ -56,8 +56,8 @@ func seedIntelligence(tx *gorm.DB) error {
 		return err
 	}
 
-	// ---- indikator digital. Urutan sengaja: "Kelengkapan Data Alergi" (93) muncul sebelum
-	// "Skrining Alergi Sebelum Peresepan" (96) - kasus uji temuan F-05 di scoring engine.
+	// indikator digital. Urutan sengaja: "Kelengkapan Data Alergi" (93) muncul sebelum
+	// "Skrining Alergi Sebelum Peresepan" (96) - kasus uji urutan indikator di scoring engine.
 	type di struct {
 		dim, name, fhir, dir string
 		val, thr, w          float64
@@ -86,7 +86,7 @@ func seedIntelligence(tx *gorm.DB) error {
 		return err
 	}
 
-	// ---- keluhan & utilisasi 6 bulan (Sep 2026: keluhan 15, kepuasan 87%, ALOS 5,3, readmisi 4,9%, BOR 81%)
+	// keluhan & utilisasi 6 bulan (Sep 2026: keluhan 15, kepuasan 87%, ALOS 5,3, readmisi 4,9%, BOR 81%)
 	months := []string{"2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"}
 	complaints := []int{22, 19, 18, 20, 17, 15}
 	satisf := []float64{82, 83, 85, 84, 86, 87}
@@ -108,7 +108,7 @@ func seedIntelligence(tx *gorm.DB) error {
 		return err
 	}
 
-	// ---- tempat tidur: total 240, aktif 196
+	// tempat tidur: total 240, aktif 196
 	beds := []struct {
 		ward, class   string
 		total, active int
@@ -126,14 +126,14 @@ func seedIntelligence(tx *gorm.DB) error {
 		return err
 	}
 
-	// ---- standar spesialis kelas B: 13 spesialis (Mata tanpa dokter -> defisit)
+	// standar spesialis kelas B: 13 spesialis (Mata tanpa dokter -> defisit)
 	specs := []string{"Penyakit Dalam", "Bedah", "Anak", "Obstetri & Ginekologi", "Anestesiologi", "Radiologi",
 		"Patologi Klinik", "Jantung", "Saraf", "Mata", "THT", "Kulit & Kelamin", "Paru"}
 	var ss []model.SpecialtyStandard
 	for i, name := range specs {
 		req := 1
 		if name == "Penyakit Dalam" {
-			req = 2 // tersedia 3 -> kasus uji F-30 (cakupan > 100%)
+			req = 2 // tersedia 3 -> kasus uji cakupan > 100%
 		}
 		ss = append(ss, model.SpecialtyStandard{ID: fmt.Sprintf("spc_ns_%02d", i+1), HospitalID: hNS,
 			RsClass: sp("B"), Specialty: sp(name), Required: num(req)})
@@ -142,7 +142,7 @@ func seedIntelligence(tx *gorm.DB) error {
 		return err
 	}
 
-	// ---- sarana: 14 fasilitas (13 wajib + MRI opsional).
+	// sarana: 14 fasilitas (13 wajib + MRI opsional).
 	// Schema belum punya kolom wajib/opsional, jadi dikodekan di kolom category.
 	facs := []struct{ name, cat string }{
 		{"Ruang Operasi", "wajib"}, {"ICU", "wajib"}, {"IGD", "wajib"}, {"Laboratorium", "wajib"},
@@ -163,7 +163,7 @@ func seedIntelligence(tx *gorm.DB) error {
 		return err
 	}
 
-	// ---- 30 evidence: skor 8, risiko 6, indikator 6, klaim 3, peringatan 3, regulasi 4
+	// 30 evidence: skor 8, risiko 6, indikator 6, klaim 3, peringatan 3, regulasi 4
 	var ev []model.EvidenceItem
 	n := 0
 	add := func(refType, refID, metric, val, src, fhir string, cnt int, vs string) {
@@ -194,7 +194,7 @@ func seedIntelligence(tx *gorm.DB) error {
 		return err
 	}
 
-	// ---- snapshot skor 3 bulan terakhir (placeholder sampai scoring engine menulis sendiri)
+	// snapshot skor 3 bulan terakhir (placeholder sampai scoring engine menulis sendiri)
 	snap := func(period string, health, bdcs float64) model.ScoreSnapshot {
 		return model.ScoreSnapshot{ID: "ss_ns_" + period, HospitalID: hNS, Period: period,
 			HealthScore: f64(health), BDCS: f64(bdcs), Trust: f64(92.3), CCS: f64(78.9), CPCS: f64(76.3),
@@ -205,7 +205,7 @@ func seedIntelligence(tx *gorm.DB) error {
 
 // Sumber data, job integrasi, aturan peringatan, notifikasi.
 func seedPlatform(tx *gorm.DB) error {
-	// ---- 10 sumber data RS Nusantara (7 SIMRS, 1 SATUSEHAT, 2 BPJS) + 18 job
+	// 10 sumber data RS Nusantara (7 SIMRS, 1 SATUSEHAT, 2 BPJS) + 18 job
 	type dsrc struct{ name, typ, status, auth string }
 	list := []dsrc{
 		{"SIMRS Utama", "SIMRS", "terhubung", "OAuth2"}, {"SIMRS Farmasi", "SIMRS", "terhubung", "OAuth2"},
@@ -255,7 +255,7 @@ func seedPlatform(tx *gorm.DB) error {
 		return err
 	}
 
-	// ---- aturan notifikasi
+	// aturan notifikasi
 	rules := []struct{ name, domain, metric, cond, sev, ch string }{
 		{"Kredensial <= 30 hari", "Kredensial", "expiry_days", "<= 30", "tinggi", "in-app,email"},
 		{"Sinyal klaim naik", "Klaim", "anomaly_growth", "> 15%", "tinggi", "in-app,email"},
@@ -273,7 +273,7 @@ func seedPlatform(tx *gorm.DB) error {
 		return err
 	}
 
-	// ---- 6 notifikasi
+	// 6 notifikasi
 	notes := []struct{ user, title, sev string }{
 		{"u_admin_ns", "13 kredensial mendekati kedaluwarsa", "tinggi"},
 		{"u_admin_ns", "Sinyal klaim naik 18%", "tinggi"},
