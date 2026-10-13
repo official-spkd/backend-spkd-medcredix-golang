@@ -56,7 +56,7 @@ func wavg(rows []weighted) float64 {
 	return sum / wsum
 }
 
-// pct = part/total x 100 dengan penyebut minimal 1 (sama dengan referensi: max(1, n)).
+// pct = part/total x 100 dengan penyebut minimal 1 (max(1, n)).
 func pct(part, total int) float64 {
 	if total < 1 {
 		total = 1
@@ -78,7 +78,7 @@ func normStatus(s string) string {
 }
 
 // daysLeft = sisa hari sampai tanggal t (dibulatkan ke atas); negatif = sudah lewat.
-// Sama dengan referensi: ceil((t - now) / 24 jam).
+// ceil((t - now) / 24 jam).
 func daysLeft(t *time.Time, now time.Time) int {
 	if t == nil {
 		return 9999
@@ -120,7 +120,7 @@ func Compute(d Data) Intelligence {
 		DomSafety:           safetyDom,
 	}
 
-	// ---- 1. Hospital Health Score = rata-rata berbobot 9 domain.
+	// 1. Hospital Health Score = rata-rata berbobot 9 domain.
 	// Domain tanpa data dihitung 0 (bobot TIDAK dinormalisasi).
 	var hRows []weighted
 	for _, def := range domainDefs {
@@ -145,7 +145,7 @@ func Compute(d Data) Intelligence {
 	}
 	out.HealthScore = r1(wavg(hRows))
 
-	// ---- 2. Kelompok A-D -> BDCS mentah
+	// 2. Kelompok A-D -> BDCS mentah
 	values := map[string]float64{
 		CompWorkforce: *wfDom.Score,
 		CompSarana:    sarana.Score,
@@ -180,14 +180,14 @@ func Compute(d Data) Intelligence {
 		out.Warnings = append(out.Warnings, "Data utilisasi belum ada; ALOS/Readmission/BOR dihitung 0.")
 	}
 
-	// ---- 3. Trust -> pengali -> BDCS akhir -> Stage
+	// 3. Trust -> pengali -> BDCS akhir -> Stage
 	out.Trust = computeTrust(d)
 	out.BDCSRaw = r1(bdcsRaw)
 	out.BDCS = r1(out.BDCSRaw * out.Trust.Multiplier)
 	out.StageRaw = stageOf(out.BDCS)
 	out.NextStage = nextStage(out.StageRaw, out.BDCS)
 
-	// ---- 4. Gerbang prasyarat P1-P3
+	// 4. Gerbang prasyarat P1-P3
 	out.Gates, out.GateBlocked = evaluateGates(d)
 	out.StageEffective = out.StageRaw
 	if out.GateBlocked {
@@ -195,7 +195,7 @@ func Compute(d Data) Intelligence {
 	}
 	out.Pass = out.StageEffective >= PassStage
 
-	// ---- 5. Anomaly flag -> Under Review
+	// 5. Anomaly flag -> Under Review
 	for _, q := range d.DQIssues {
 		if q.Anomaly && normStatus(q.Status) != "diperbaiki" {
 			out.AnomalyFlags++
@@ -203,7 +203,7 @@ func Compute(d Data) Intelligence {
 	}
 	out.UnderReview = out.AnomalyFlags >= AnomalyReviewThreshold
 
-	// ---- 6. Sub-skor
+	// 6. Sub-skor
 	out.Claim = claimRes
 	out.Pathway = pathRes
 	out.Utilization = ur
@@ -233,13 +233,13 @@ func nextStage(current int, bdcs float64) *NextStage {
 	return nil // sudah Stage tertinggi
 }
 
-// ---------------------------------------------------------------- Trust
+// Trust
 
-// Trust = rata-rata berbobot faktor; tanpa faktor -> 100. Total bobot 0 -> 0 (sama dengan referensi).
+// Trust = rata-rata berbobot faktor; tanpa faktor -> 100. Total bobot 0 -> 0.
 func computeTrust(d Data) TrustResult {
 	tr := TrustResult{Factors: []TrustFactorResult{}}
 	if len(d.TrustFactors) == 0 {
-		tr.Score, tr.Defaulted = 100, true // tidak ada faktor -> dianggap 100 (SRS 3.3.2)
+		tr.Score, tr.Defaulted = 100, true // tidak ada faktor -> dianggap 100
 	} else {
 		var den float64
 		rows := make([]weighted, 0, len(d.TrustFactors))
@@ -268,7 +268,7 @@ func computeTrust(d Data) TrustResult {
 	return tr
 }
 
-// ---------------------------------------------------------------- Gerbang P1-P6
+// Gerbang P1-P6
 
 // Gerbang P1-P3 hanya memblokir bila prasyaratnya ADA dan statusnya bukan "valid".
 // Prasyarat yang belum terdaftar dan dokumen lewat masa berlaku hanya diberi catatan.
@@ -304,7 +304,7 @@ func evaluateGates(d Data) ([]Gate, bool) {
 	return gates, blocked
 }
 
-// ---------------------------------------------------------------- Indikator
+// Indikator
 
 // normDirection: "down"/"lower" = makin kecil makin baik; selain itu "up".
 func normDirection(dir *string) string {
@@ -446,7 +446,7 @@ func indicatorDomain(d Data, dim string) DomainResult {
 	return res
 }
 
-// ---------------------------------------------------------------- Domain: Digital Maturity
+// Domain: Digital Maturity
 
 // Digital = EMR 50% + Infrastruktur 50%; EMR = Rawat Inap 55% + Rawat Jalan 45% (formula legacy).
 func digitalDomain(d Data) (DomainResult, float64, float64) {
@@ -491,7 +491,7 @@ func interoperabilityDomain(d Data) DomainResult {
 	return res
 }
 
-// ---------------------------------------------------------------- Domain: Patient Safety
+// Domain: Patient Safety
 
 // Safety = Alergi Obat 40% + High-Alert & Closed-Loop 30% + Dokumentasi Pemulangan 30%.
 func safetyDomain(d Data) (DomainResult, SafetyResult) {
@@ -519,7 +519,7 @@ func safetyDomain(d Data) (DomainResult, SafetyResult) {
 	return res, sr
 }
 
-// ---------------------------------------------------------------- Domain: Workforce
+// Domain: Workforce
 
 // Workforce = cakupan spesialis 50% + SIP aktif 30% + status tenaga aktif 20%.
 //
@@ -598,7 +598,7 @@ func workforceDomain(d Data) (DomainResult, WorkforceResult) {
 	return res, wr
 }
 
-// ---------------------------------------------------------------- Domain: Credentialing
+// Domain: Credentialing
 
 // Credentialing = kelengkapan STR+SIP 40% + lisensi aktif 25% + pipeline 15% + skor expiry 20%.
 //
@@ -644,7 +644,7 @@ func credentialingDomain(d Data) (DomainResult, CredentialingResult) {
 		}
 	}
 	completeness := pct(complete, len(d.Practitioners))
-	license := completeness // STR & SIP tidak bermasalah = definisi yang sama dengan referensi
+	license := completeness // STR & SIP tidak bermasalah
 	pipeline := pct(final, len(d.Credentials))
 	expiry := clamp(100 - float64(cr.Expired*credExpiredPen+cr.Within30*credWithin30Pen+cr.Within90*credWithin90Pen))
 	cr.Completeness, cr.LicenseActive, cr.PipelineHealth, cr.ExpiryScore = r1(completeness), r1(license), r1(pipeline), r1(expiry)
@@ -687,12 +687,12 @@ func credentialingDomain(d Data) (DomainResult, CredentialingResult) {
 	return res, cr
 }
 
-// ---------------------------------------------------------------- Domain: Claim (CCS)
+// Domain: Claim (CCS)
 
 // parseClaimFlags membaca flags_json dalam dua format:
 //
 //	{"flags": {"diagnosis": "ok", ...}}   (format lama)
-//	{"Diagnosis": "ok", ...}              (format referensi)
+//	{"Diagnosis": "ok", ...} (format baru)
 //
 // Kunci & nilai dijadikan huruf kecil. Nilai bukan string diabaikan.
 func parseClaimFlags(raw json.RawMessage) map[string]string {
@@ -784,11 +784,11 @@ func claimDomain(d Data) (DomainResult, ClaimResult) {
 	return res, cr
 }
 
-// ---------------------------------------------------------------- Domain: Pathway (CPCS)
+// Domain: Pathway (CPCS)
 
 // CPCS = cakupan 25% + kepatuhan 50% + dokumentasi deviasi 25%.
 //
-//	cakupan      = angka tetap referensi: >= 8 pathway -> 16/20, selain itu min(pathway, 11)/14
+//	cakupan      = angka tetap: >= 8 pathway -> 16/20, selain itu min(pathway, 11)/14
 //	kepatuhan    = rata-rata adherence semua episode (kosong dihitung 0)
 //	dokumentasi  = % episode berdeviasi (documented != null) yang terdokumentasi; tanpa deviasi = 100
 func pathwayDomain(d Data) (DomainResult, PathwayResult) {
@@ -854,7 +854,7 @@ func pathwayDomain(d Data) (DomainResult, PathwayResult) {
 	return res, pr
 }
 
-// ---------------------------------------------------------------- Sarana & Prasarana
+// Sarana & Prasarana
 
 // Sarana (kelompok A) = rata-rata skor fasilitas wajib (kategori tidak mengandung "opsional"):
 // ada + berfungsi + kalibrasi valid -> 100; ada tapi tidak berfungsi / perlu perbaikan -> 75; selain itu 40.
@@ -885,7 +885,7 @@ func saranaScore(d Data) SaranaResult {
 	return sr
 }
 
-// ---------------------------------------------------------------- Utilization Review
+// Utilization Review
 
 // Skor UR = rata-rata 3 komponen pada bulan terbaru (nilai kosong dihitung 0):
 //
