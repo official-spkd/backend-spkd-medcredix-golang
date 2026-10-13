@@ -54,7 +54,7 @@ func claimJSON(label string, bad map[string]bool) []byte {
 }
 
 func seedClaims(tx *gorm.DB) error {
-	// ---- RS Nusantara: 42 klaim (CLM-2026-00101..00142)
+	// RS Nusantara: 42 klaim (CLM-2026-00101..00142)
 	labelOverride := map[int]string{1: "Dengue Haemorrhagic Fever", 18: "Appendicitis Akut",
 		28: "Stroke Iskemik", 29: "DM dengan Ulkus Kaki", 42: "PPOK Berat"}
 	rejected := map[int]bool{18: true}
@@ -76,7 +76,7 @@ func seedClaims(tx *gorm.DB) error {
 		}
 	}
 
-	// ---- 83 anomali (Baru 58 / Ditinjau 25; Tinggi 23 / Sedang 60) disebar ke 26 klaim bersinyal
+	// 83 anomali (Baru 58 / Ditinjau 25; Tinggi 23 / Sedang 60) disebar ke 26 klaim bersinyal
 	const reviewer = "Silvia Rahmawati, AMd.Kep"
 	var anoms []model.ClaimAnomaly
 	badByClaim := map[int]map[string]bool{}
@@ -151,7 +151,7 @@ func seedClaims(tx *gorm.DB) error {
 		})
 	}
 
-	// ---- RS Medika: 6 klaim (CLM-2026-00201..00206), 4 anomali pada klaim 204 dan 206
+	// RS Medika: 6 klaim (CLM-2026-00201..00206), 4 anomali pada klaim 204 dan 206
 	msStatus := []string{"disetujui", "disetujui", "diverifikasi", "disetujui", "ditunda", "disetujui"}
 	msBad := map[int]map[string]bool{4: {"medication": true, "stock": true}, 6: {"timeline": true, "diagnostic": true}}
 	for i := 1; i <= 6; i++ {
