@@ -52,30 +52,45 @@ GORM, Gin dan library lain **tidak perlu di-install manual**. Semuanya terdaftar
 
 ```
 backend-spkd-medcredix/
-├── cmd/server/main.go          # titik masuk aplikasi
+├── cmd/server/main.go            # titik masuk: baca env, buka DB, jalankan server
 ├── internal/
-│   ├── api/                    # handler HTTP & router
-│   │   ├── router.go           # daftar endpoint + middleware keamanan
-│   │   ├── auth_handler.go     # login + pembatas percobaan login
-│   │   ├── fe_*.go             # endpoint yang dipakai frontend Vue
-│   │   ├── files.go            # unggah & buka dokumen
-│   │   ├── jobs.go             # job otomatis (status kredensial tiap jam)
-│   │   └── ...
-│   ├── auth/                   # JWT, peran & izin (RBAC), isolasi RS
-│   ├── audit/                  # pencatatan audit trail
-│   ├── db/                     # koneksi database + schema.sql (33 tabel)
-│   ├── model/                  # struct GORM per tabel
-│   ├── scoring/                # mesin perhitungan skor + unit test
-│   ├── seed/                   # data demo (hanya untuk lokal)
-│   ├── storage/                # penyimpanan berkas terenkripsi (AES-256-GCM)
-│   ├── integration/            # klien FHIR (SIMRS / SATUSEHAT)
-│   └── appenv/                 # helper environment
-├── Dockerfile                  # image backend
-├── docker-compose.yml          # PostgreSQL + backend + frontend
-├── .dockerignore               # berkas yang tidak boleh masuk image
-├── go.mod / go.sum             # daftar dependency
+│   ├── router/                   # daftar semua endpoint (URL -> controller)
+│   │   └── router.go
+│   ├── middleware/               # dijalankan sebelum controller
+│   │   ├── auth.go               # cek token login + cek izin peran
+│   │   ├── cors.go               # izin origin dari CORS_ORIGIN
+│   │   ├── security_headers.go   # header keamanan
+│   │   ├── correlation_id.go     # ID unik per request untuk log
+│   │   ├── body_limit.go         # batas ukuran body / upload
+│   │   └── score_cache.go        # buang cache skor setelah data berubah
+│   ├── controller/               # handler HTTP, satu file per fitur
+│   │   ├── auth_controller.go    # login & logout
+│   │   ├── dashboard_controller.go
+│   │   ├── risk_controller.go, warning_controller.go, action_controller.go, ...
+│   │   ├── request.go, response.go, format.go   # helper bersama
+│   │   ├── mapper.go, intel_mapper.go           # ubah data DB ke bentuk JSON frontend
+│   │   ├── upload.go             # simpan & kirim berkas
+│   │   └── login_limiter.go      # batas percobaan login
+│   ├── service/                  # logika di luar request
+│   │   ├── intel_cache.go        # cache hasil hitung skor
+│   │   └── credential_job.go     # job tiap jam: status kredensial
+│   ├── model/                    # struct GORM per tabel
+│   ├── database/                 # koneksi PostgreSQL + schema.sql (33 tabel)
+│   ├── config/                   # baca environment (APP_ENV, TRUSTED_PROXIES, ...)
+│   ├── auth/                     # JWT, peran & izin (RBAC), isolasi RS
+│   ├── audit/                    # pencatatan audit trail
+│   ├── scoring/                  # mesin perhitungan skor + unit test
+│   ├── seed/                     # data demo (hanya untuk lokal)
+│   ├── storage/                  # penyimpanan berkas terenkripsi (AES-256-GCM)
+│   └── integration/              # klien FHIR (SIMRS / SATUSEHAT)
+├── Dockerfile                    # image backend
+├── docker-compose.yml            # PostgreSQL + backend + frontend
+├── .dockerignore                 # berkas yang tidak boleh masuk image
+├── go.mod / go.sum               # daftar dependency
 └── .gitignore
 ```
+
+Alur satu request: **router** -> **middleware** (CORS, cek login, cek izin) -> **controller** -> **model** / **database**. Penjelasan lengkap tiap folder ada di [STRUKTUR-FOLDER.md](STRUKTUR-FOLDER.md).
 
 ---
 
@@ -239,7 +254,7 @@ CREATE DATABASE medcredix OWNER medcredix;
    - macOS (Homebrew): User = username Mac kamu, password dikosongkan.
 3. Klik kanan koneksi, pilih *SQL Editor → New SQL script*, lalu jalankan dua perintah `CREATE` di atas.
 
-> Tabel **tidak perlu** dibuat manual. Saat server pertama kali jalan, ke-33 tabel otomatis dibuat dari `internal/db/schema.sql`.
+> Tabel **tidak perlu** dibuat manual. Saat server pertama kali jalan, ke-33 tabel otomatis dibuat dari `internal/database/schema.sql`.
 
 ### 3. Buat file `.env`
 
@@ -762,7 +777,7 @@ Folder `backup-db-medcredix/` dan file `*.dump` sudah masuk `.gitignore` karena 
 | Docker: login gagal padahal password benar | Database Docker terpisah dari PostgreSQL lokal | Pakai password demo, atau [pindahkan data](#6-pindahkan-data-dari-postgresql-lokal-opsional) |
 | `docker push`: `denied: requested access to the resource is denied` | Belum login, atau nama image tidak diawali username Docker Hub | Jalankan `docker login`, lalu pastikan tag berbentuk `username/nama-image` |
 | `cloudflared` tidak dikenali | Terminal dibuka sebelum install | Tutup lalu buka lagi terminal / VS Code |
-| `undefined: ...` saat build | Ada file di `internal/api` yang hilang atau isinya tertukar | Pastikan semua file `fe_*.go` lengkap dan berada di folder `internal/api` |
+| `undefined: ...` saat build | Ada file yang hilang, atau folder lama (`internal/api`, `internal/appenv`, `internal/db`) masih ada | Hapus folder lama itu, pastikan semua file di `internal/controller`, `internal/middleware`, `internal/router`, dan `internal/service` lengkap |
 
 ---
 
