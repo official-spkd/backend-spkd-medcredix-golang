@@ -2,14 +2,13 @@ package auth
 
 import (
 	"errors"
-	"fmt"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/spkd/medcredix/internal/model"
 )
 
-// Permission = 13 izin MedCredix (sheet "Data Uji & Akun" -> Matriks izin peran).
+// Permission = 13 izin MedCredix.
 type Permission string
 
 const (
@@ -69,7 +68,7 @@ func HasPermission(role string, p Permission) bool {
 	return false
 }
 
-// CurrentUser mengambil user yang sudah divalidasi oleh Wrap().
+// CurrentUser mengambil user yang sudah divalidasi oleh middleware.Auth.
 func CurrentUser(c *gin.Context) (model.User, bool) {
 	v, ok := c.Get("user")
 	if !ok {
@@ -79,31 +78,13 @@ func CurrentUser(c *gin.Context) (model.User, bool) {
 	return u, ok
 }
 
-// RequirePermission = middleware tingkat route (satu izin untuk seluruh endpoint).
-// Untuk endpoint dengan izin berbeda per aksi, pakai HasPermission di dalam handler.
-func RequirePermission(p Permission) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		u, ok := CurrentUser(c)
-		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "Sesi tidak valid."})
-			return
-		}
-		if !HasPermission(u.Role, p) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"ok": false,
-				"error": fmt.Sprintf("Peran %s tidak memiliki izin %s.", RoleLabels[u.Role], p)})
-			return
-		}
-		c.Next()
-	}
-}
-
 var (
 	ErrNoHospital  = errors.New("akun Anda tidak terikat ke rumah sakit, sertakan parameter hospitalId")
 	ErrCrossTenant = errors.New("akses lintas rumah sakit tidak diizinkan")
 )
 
 // CanSwitchTenant: super_admin selalu boleh; auditor hanya bila tidak terikat RS
-// (kasus Auditor BPJS, temuan F-03). Auditor yang terikat RS tidak boleh pindah (F-40).
+// (contoh: Auditor BPJS). Auditor yang terikat ke satu RS tidak boleh pindah.
 func CanSwitchTenant(u model.User) bool {
 	return u.Role == "super_admin" || (u.Role == "auditor" && u.HospitalID == nil)
 }
