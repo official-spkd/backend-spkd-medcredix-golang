@@ -11,7 +11,7 @@ import (
 	"github.com/spkd/medcredix/internal/model"
 )
 
-// Tanggal acuan data uji: "Data seed relatif terhadap 03-10-2026" (sheet Data Uji & Akun).
+// Tanggal acuan data uji: "Data seed relatif terhadap 03-10-2026".
 var refDate = time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)
 
 func day(n int) *time.Time   { t := refDate.AddDate(0, 0, n); return &t }
@@ -66,10 +66,10 @@ func RunDemoData(d *gorm.DB) error {
 	})
 }
 
-// ---------------------------------------------------------------- regulasi
+// regulasi
 
 func seedRegulations(tx *gorm.DB) error {
-	// CATATAN: nomor/judul regulasi adalah isian awal - verifikasi dengan SRS sebelum UAT.
+	// CATATAN: nomor/judul regulasi adalah isian awal - cek ulang sebelum UAT.
 	type reg struct {
 		code, title, number, authority string
 		year                           int
@@ -128,7 +128,7 @@ func seedRegulations(tx *gorm.DB) error {
 	return ins(tx, maps)
 }
 
-// ---------------------------------------------------------------- praktisi & kredensial
+// praktisi & kredensial
 
 type staff struct{ name, prof, spec, dept string }
 
@@ -166,7 +166,7 @@ var nsStaff = []staff{
 }
 
 func seedWorkforce(tx *gorm.DB) error {
-	// ---- RS Nusantara: 28 praktisi, 71 kredensial (56 STR/SIP + 15 sertifikat)
+	// RS Nusantara: 28 praktisi, 71 kredensial (56 STR/SIP + 15 sertifikat)
 	override := map[string]string{
 		"c_pns07_sip": "verifikasi", "c_pns23_sip": "verifikasi", "c_pns15_str": "verifikasi",
 		"c_pns13_str": "tinjauan_komite", "c_pns19_sip": "tinjauan_komite",
@@ -236,7 +236,7 @@ func seedWorkforce(tx *gorm.DB) error {
 		})
 	}
 
-	// ---- RS Medika: 10 praktisi, 20 kredensial (STR + SIP, semua aktif)
+	// RS Medika: 10 praktisi, 20 kredensial (STR + SIP, semua aktif)
 	msNames := []string{"dr. Arif Budiman", "dr. Bella Kusuma", "dr. Candra Wijaya, Sp.PD", "dr. Dian Pertiwi, Sp.A",
 		"dr. Edo Saputra", "Ns. Fani Rahayu, S.Kep", "Ns. Gilang Ramadhan, S.Kep", "Bd. Hesti Lestari, S.Tr.Keb",
 		"apt. Irfan Hakim, S.Farm", "dr. Jihan Aulia"}
@@ -264,14 +264,14 @@ func seedWorkforce(tx *gorm.DB) error {
 	return ins(tx, creds)
 }
 
-// ---------------------------------------------------------------- prasyarat wajib
+// prasyarat wajib
 
 func seedRequirements(tx *gorm.DB) error {
 	type rq struct {
 		code, name, cat, src, status, docNo string
 		exp                                 int
 	}
-	// P2/P3/P4 sesuai test case. Nama P1, P5, P6 adalah isian sementara - ganti sesuai SRS.
+	// P2/P3/P4 sesuai test case. Nama P1, P5, P6 adalah isian sementara - ganti sesuai dokumen resmi.
 	list := []rq{
 		{"P1", "Izin Operasional Rumah Sakit", "Perizinan", "PMK 3/2020", "valid", "IZIN-OPS-2024-0017", 900},
 		{"P2", "Perjanjian Kerja Sama (PKS) BPJS Kesehatan", "Kerja Sama", "Perpres 82/2018", "valid", "PKS-BPJS-2025-118", 35},
