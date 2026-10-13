@@ -12,7 +12,7 @@ import (
 // Baseline test case: Risiko 3 tinggi / 6 sedang / 3 rendah (badge Risk Radar = 6 berstatus "terbuka"),
 // Peringatan 10 (badge = 2 "baru", 7 aktif), Aksi 16.
 func seedRiskWarningAction(tx *gorm.DB) error {
-	// ------------------------------------------------ risiko (12)
+	// risiko (12)
 	type rk struct {
 		code, cat, level, title, status, owner, rec string
 		due                                         int
@@ -48,7 +48,7 @@ func seedRiskWarningAction(tx *gorm.DB) error {
 		return err
 	}
 
-	// ------------------------------------------------ early warning (10)
+	// early warning (10)
 	type ew struct {
 		title, sev, rule, trig, status, assigned string
 		due                                      int
@@ -81,9 +81,9 @@ func seedRiskWarningAction(tx *gorm.DB) error {
 		return err
 	}
 
-	// ------------------------------------------------ action center (16)
+	// action center (16)
 	// CATATAN: test case menyebut ACT-003 & ACT-016 berstatus "Ditinjau", tetapi CHECK di schema.sql
-	// tidak mengizinkan status itu (itulah perbaikan F-09). Di sini keduanya dipetakan ke
+	// tidak mengizinkan status itu. Di sini keduanya dipetakan ke
 	// 'menunggu_verifikasi', sehingga badge Action Center = 13 (bukan 11) sampai dokumen uji direvisi.
 	type ac struct {
 		title, prio, status, srcType, srcRef, owner, note string
