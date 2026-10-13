@@ -8,11 +8,11 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/spkd/medcredix/internal/appenv"
+	"github.com/spkd/medcredix/internal/config"
 	"github.com/spkd/medcredix/internal/model"
 )
 
-// Kata sandi semua akun demo (sesuai sheet "Data Uji & Akun").
+// Kata sandi semua akun demo.
 // Hanya untuk lokal/UAT.
 const DemoPassword = "medcredix2026"
 
@@ -21,7 +21,7 @@ func s(v string) *string { return &v }
 // Run mengisi 2 rumah sakit, 12 akun demo, lalu seluruh data uji (RunDemoData).
 // Aman dijalankan berulang: data yang sudah ada dilewati (ON CONFLICT DO NOTHING).
 func Run(d *gorm.DB) error {
-	if appenv.IsProduction() {
+	if config.IsProduction() {
 		return errors.New("seed demo ditolak: APP_ENV=production")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(DemoPassword), bcrypt.DefaultCost)
