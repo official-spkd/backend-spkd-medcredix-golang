@@ -9,12 +9,10 @@ import (
 	"github.com/spkd/medcredix/internal/model"
 )
 
-// ============================================================
 // compute_extra_test.go — pelengkap compute_test.go.
 // Memakai helper yang sudah ada di compute_test.go:
 // now, sp, f, bl, in, day, near, ind, validReqs, goldenData.
 // Jalankan: go test ./internal/scoring/ -run Extra -v
-// ============================================================
 
 func domOf(out Intelligence, k DomainKey) DomainResult {
 	for _, d := range out.Domains {
@@ -25,7 +23,7 @@ func domOf(out Intelligence, k DomainKey) DomainResult {
 	return DomainResult{}
 }
 
-// ---------- Gerbang P1-P3 ----------
+// Gerbang P1-P3
 
 func TestExtraGateStatusAndCode(t *testing.T) {
 	for _, st := range []string{"belum dilengkapi", "menunggu_verifikasi", "Menunggu Verifikasi", "kedaluwarsa", ""} {
@@ -41,7 +39,7 @@ func TestExtraGateStatusAndCode(t *testing.T) {
 	if _, blocked := evaluateGates(Data{Now: now, Requirements: reqs}); blocked {
 		t.Error("kode ' p1 '/'p2' harus dinormalisasi (trim + upper)")
 	}
-	// status 'VALID' / 'Valid' (format referensi)
+	// status 'VALID' / 'Valid' (format baru)
 	reqs = validReqs()
 	reqs[1].Status, reqs[2].Status = "Valid", "VALID"
 	if _, blocked := evaluateGates(Data{Now: now, Requirements: reqs}); blocked {
@@ -93,7 +91,7 @@ func TestExtraEachGateAloneBlocks(t *testing.T) {
 	}
 }
 
-// ---------- Trust ----------
+// Trust
 
 func TestExtraTrustWeightedAverage9Factors(t *testing.T) {
 	fs := []model.TrustFactor{
@@ -122,7 +120,7 @@ func TestExtraTrustWeightedAverage9Factors(t *testing.T) {
 }
 
 func TestExtraTrustZeroWeightsIsZero(t *testing.T) {
-	// sama dengan referensi: ada faktor tapi total bobot 0 -> trust 0 -> x0,70 (bukan default 100)
+	// ada faktor tapi total bobot 0 -> trust 0 -> x0,70 (bukan default 100)
 	tr := computeTrust(Data{TrustFactors: []model.TrustFactor{{Factor: "x", Score: 10, Weight: 0}}})
 	if tr.Defaulted || tr.Score != 0 || tr.Multiplier != 0.70 || math.IsNaN(tr.Factors[0].Contribution) {
 		t.Errorf("bobot total 0 harus 0/0.70 tanpa NaN, dapat %+v", tr)
@@ -139,7 +137,7 @@ func TestExtraTrustDropsStage(t *testing.T) {
 	}
 }
 
-// ---------- Indikator ----------
+// Indikator
 
 func TestExtraIndicatorStatusBoundaries(t *testing.T) {
 	cases := []struct {
@@ -201,7 +199,7 @@ func TestExtraDimensionMapping(t *testing.T) {
 		{"Diagnostik", "x", dimDiag},
 		{"Interoperabilitas", "x", dimInterop},
 		{"Keselamatan Pasien", "x", dimSafety}, // format lama
-		{"Keselamatan", "x", dimSafety},        // format referensi
+		{"Keselamatan", "x", dimSafety},        // format baru
 		{"Tidak Dikenal", "x", ""},
 	}
 	for _, c := range cases {
@@ -261,7 +259,7 @@ func TestExtraSafetyDomain(t *testing.T) {
 	}
 }
 
-// ---------- Credentialing ----------
+// Credentialing
 
 func TestExtraCredentialingScore(t *testing.T) {
 	d := Data{Now: now,
@@ -291,7 +289,7 @@ func TestExtraCredentialingScore(t *testing.T) {
 }
 
 func TestExtraCredentialingNoData(t *testing.T) {
-	// sama dengan referensi: tanpa data, hanya skor expiry (100 x 20%) yang tersisa -> 20
+	// tanpa data, hanya skor expiry (100 x 20%) yang tersisa -> 20
 	res, _ := credentialingDomain(Data{Now: now})
 	if !near(*res.Score, 20, 0.001) || res.HasData {
 		t.Errorf("credentialing tanpa data=%v want 20", *res.Score)
@@ -311,7 +309,7 @@ func TestExtraCredentialStatusSpelling(t *testing.T) {
 	}
 }
 
-// ---------- Workforce ----------
+// Workforce
 
 func TestExtraWorkforceProfessionAndSIP(t *testing.T) {
 	d := Data{Now: now,
@@ -340,7 +338,7 @@ func TestExtraWorkforceProfessionAndSIP(t *testing.T) {
 	}
 }
 
-// ---------- Claim (CCS) ----------
+// Claim (CCS)
 
 func TestExtraClaimWarnCountsHalf(t *testing.T) {
 	mk := func(v string) model.Claim {
@@ -357,7 +355,7 @@ func TestExtraClaimBothFormats(t *testing.T) {
 	enc, _ := json.Marshal(`{"Diagnosis":"ok"}`) // flags_json berisi string JSON
 	cl := []model.Claim{
 		{FlagsJSON: []byte(`{"flags":{"diagnosis":"ok","medication":"OK"}}`)}, // format lama
-		{FlagsJSON: []byte(`{"Diagnosis":"warn","Medication":"bad"}`)},        // format referensi
+		{FlagsJSON: []byte(`{"Diagnosis":"warn","Medication":"bad"}`)},        // format baru
 		{FlagsJSON: nil},
 		{FlagsJSON: []byte(`bukan json`)},
 		{FlagsJSON: enc},
@@ -392,7 +390,7 @@ func TestExtraCCSFullWeights(t *testing.T) {
 	}
 }
 
-// ---------- Pathway (CPCS) ----------
+// Pathway (CPCS)
 
 func TestExtraPathwayEdgeCases(t *testing.T) {
 	// tanpa pathway & episode: cakupan 0, kepatuhan 0, dokumentasi 100 -> 25
@@ -431,7 +429,7 @@ func TestExtraPathwayEdgeCases(t *testing.T) {
 	}
 }
 
-// ---------- Utilization ----------
+// Utilization
 
 func TestExtraURBoundaries(t *testing.T) {
 	one := func(alos, re, bor float64) *URResult {
@@ -452,7 +450,7 @@ func TestExtraURBoundaries(t *testing.T) {
 	if u := one(6, 7, 90); !near(u.Score, 80, 0.001) { // 80, 70, 90
 		t.Errorf("(6,7,90) -> %v", u.Score)
 	}
-	// tanpa data: nilai 0 -> ALOS 100, Readmission 100, BOR 0 -> 66.7 (sama dengan referensi)
+	// tanpa data: nilai 0 -> ALOS 100, Readmission 100, BOR 0 -> 66.7
 	for _, d := range []Data{{}, {Utilization: []model.UtilizationStat{{Month: "2026-09"}}}} {
 		if u := urScore(d); u == nil || !near(u.Score, 66.7, 0.001) || len(u.Components) != 3 {
 			t.Errorf("UR tanpa nilai=%+v want 66.7", u)
@@ -460,7 +458,7 @@ func TestExtraURBoundaries(t *testing.T) {
 	}
 }
 
-// ---------- Sarana ----------
+// Sarana
 
 func TestExtraSarana(t *testing.T) {
 	d := Data{Facilities: []model.Facility{
@@ -479,7 +477,7 @@ func TestExtraSarana(t *testing.T) {
 	}
 }
 
-// ---------- Integrasi formula (golden) ----------
+// Integrasi formula (golden)
 
 func TestExtraGoldenFullPipeline(t *testing.T) {
 	out := Compute(goldenData())
@@ -583,7 +581,7 @@ func TestExtraConfigIntegrity(t *testing.T) {
 	}
 }
 
-// ---------- Perilaku ketika data tipis ----------
+// Perilaku ketika data tipis
 
 // Domain tanpa data dihitung 0, sehingga satu domain bagus + gerbang valid TIDAK bisa lulus.
 func TestExtraSparseDataCannotPass(t *testing.T) {
@@ -594,7 +592,7 @@ func TestExtraSparseDataCannotPass(t *testing.T) {
 	}
 }
 
-// ---------- Under Review ----------
+// Under Review
 
 func TestExtraUnderReviewStatusCase(t *testing.T) {
 	q := func(st string) model.DataQualityIssue { return model.DataQualityIssue{Anomaly: true, Status: st} }
@@ -604,7 +602,7 @@ func TestExtraUnderReviewStatusCase(t *testing.T) {
 	}
 }
 
-// ---------- Ketahanan ----------
+// Ketahanan
 
 func TestExtraDoesNotMutateInputAndIsDeterministic(t *testing.T) {
 	d := goldenData()
