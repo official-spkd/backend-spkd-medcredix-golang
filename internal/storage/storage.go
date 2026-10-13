@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/spkd/medcredix/internal/appenv"
+	"github.com/spkd/medcredix/internal/config"
 )
 
 // MaxSize = batas ukuran satu berkas (10 MB).
@@ -59,7 +59,7 @@ func Init() error {
 			return err
 		}
 		key = k
-	} else if appenv.IsProduction() {
+	} else if config.IsProduction() {
 		return errors.New("FILE_ENCRYPTION_KEY wajib diisi saat APP_ENV=production (32 byte, base64)")
 	} else {
 		// Dev saja: kunci diturunkan dari JWT_SECRET supaya tidak perlu setting tambahan.
