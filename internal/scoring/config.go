@@ -25,7 +25,7 @@ const (
 type domainDef struct {
 	Key    DomainKey
 	Label  string
-	Weight float64 // persen; total 9 domain = 100 (SRS 3.3.1)
+	Weight float64 // persen; total 9 domain = 100
 }
 
 var domainDefs = []domainDef{
@@ -61,9 +61,9 @@ type groupComponentDef struct {
 	Weight float64 // pecahan; total per kelompok = 1
 }
 
-// BDCS mentah = A*25% + B*30% + C*35% + D*10% (SRS 3.3.1).
-// Isi kelompok mengikuti engine referensi. Catatan: Credentialing TIDAK masuk kelompok mana pun
-// (hanya ikut Health Score), sama seperti engine referensi.
+// BDCS mentah = A*25% + B*30% + C*35% + D*10%.
+// Catatan: Credentialing TIDAK masuk kelompok mana pun
+// (hanya ikut Health Score).
 type groupDef struct {
 	Code       string
 	Label      string
@@ -106,7 +106,7 @@ const (
 )
 
 // digital_indicators.dimension (huruf kecil, trim) -> dimensi kanonik.
-// Menerima format seed lama ("Digital", "Keselamatan Pasien") maupun format referensi
+// Menerima format seed lama ("Digital", "Keselamatan Pasien") maupun format baru
 // ("EMR", "Infrastruktur", "Keselamatan").
 var dimensionAliases = map[string]string{
 	"emr": dimEMR, "rme": dimEMR,
@@ -186,14 +186,14 @@ var stageBands = []struct {
 const PassStage = 5 // LULUS bila Stage efektif >= 5
 
 // P1-P3 adalah gerbang Stage; P4-P6 hanya ditampilkan.
-// Gerbang hanya memblokir bila prasyaratnya ADA dan statusnya bukan valid (sama dengan referensi).
+// Gerbang hanya memblokir bila prasyaratnya ADA dan statusnya bukan valid.
 var gateCodes = map[string]bool{"P1": true, "P2": true, "P3": true}
 var allRequirementCodes = []string{"P1", "P2", "P3", "P4", "P5", "P6"}
 
 // RS ditandai Under Review bila anomaly flag aktif >= 3.
 const AnomalyReviewThreshold = 3
 
-// CCS: 6 kategori (SRS 3.11.1). Key = kunci flag klaim (huruf kecil; "Diagnosis" juga diterima).
+// CCS: 6 kategori. Key = kunci flag klaim (huruf kecil; "Diagnosis" juga diterima).
 // Sub-skor = (ok + warn x 0,5) / total klaim x 100.
 var claimCategories = []struct {
 	Key    string
@@ -210,14 +210,14 @@ var claimCategories = []struct {
 
 const claimWarnCredit = 0.5
 
-// CPCS = cakupan 25% + kepatuhan 50% + dokumentasi deviasi 25% (SRS REQ-ENG-04).
+// CPCS = cakupan 25% + kepatuhan 50% + dokumentasi deviasi 25%.
 const (
 	cpcsCoverageW      = 0.25
 	cpcsAdherenceW     = 0.50
 	cpcsDocumentationW = 0.25
 )
 
-// Cakupan CPCS memakai angka tetap engine referensi:
+// Cakupan CPCS memakai angka tetap:
 // >= 8 pathway -> 16/20 diagnosis utama; selain itu min(jumlah pathway, 11)/14.
 const (
 	cpcsBigMinPathways = 8
