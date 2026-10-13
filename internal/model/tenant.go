@@ -1,4 +1,4 @@
-// Kode dihasilkan dari medcredix_erd.sql (SRS Appendix B). Skema asli ada di internal/db/schema.sql.
+// Model GORM untuk tabel database. Skema lengkapnya ada di internal/database/schema.sql.
 package model
 
 import (
