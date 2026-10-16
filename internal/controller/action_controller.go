@@ -120,6 +120,10 @@ func PostActions(db *gorm.DB) gin.HandlerFunc {
 		if !requirePerm(c, db, user, hid, auth.PermCreate, "actions", "") {
 			return
 		}
+		if msg := ownerNotAssignable(db, hid, body.Owner); msg != "" {
+			fail(c, http.StatusBadRequest, msg)
+			return
+		}
 		priority := codeOf(body.Priority)
 		if rank(priority) == 0 || priority == "kritis" {
 			priority = "sedang"
@@ -205,6 +209,10 @@ func PatchActions(db *gorm.DB) gin.HandlerFunc {
 			}
 			upd := map[string]interface{}{}
 			owner := strings.TrimSpace(body.Owner)
+			if msg := ownerNotAssignable(db, hid, owner); msg != "" {
+				fail(c, http.StatusBadRequest, msg)
+				return
+			}
 			if owner != "" {
 				upd["owner"] = owner
 				if a.Status == "baru" {
@@ -269,5 +277,34 @@ func PatchActions(db *gorm.DB) gin.HandlerFunc {
 		}
 		db.First(&a, "id = ?", a.ID)
 		ok(c, feAction(a))
+	}
+}
+
+// ownerNotAssignable menolak penanggung jawab berupa akun yang tidak boleh mengerjakan aksi:
+// Auditor/Viewer (lihat saja), akun nonaktif, atau akun RS lain (isolasi tenant).
+// Nama tim/unit bebas (mis. "Tim Mutu") tetap boleh karena tidak cocok dengan akun mana pun.
+func ownerNotAssignable(db *gorm.DB, hid, owner string) string {
+	owner = strings.TrimSpace(owner)
+	if owner == "" || owner == "Belum ditugaskan" {
+		return ""
+	}
+	var matches []model.User
+	db.Where("name = ?", owner).Find(&matches)
+	if len(matches) == 0 {
+		return ""
+	}
+	for _, u := range matches {
+		if u.Active && u.HospitalID != nil && *u.HospitalID == hid && !contains(viewOnlyRoles, u.Role) {
+			return ""
+		}
+	}
+	u := matches[0]
+	switch {
+	case contains(viewOnlyRoles, u.Role):
+		return fmt.Sprintf("%s (%s) hanya dapat melihat, jadi tidak bisa menjadi penanggung jawab tindakan.", u.Name, auth.RoleLabels[u.Role])
+	case u.HospitalID == nil || *u.HospitalID != hid:
+		return "Akses lintas rumah sakit tidak diizinkan (isolasi tenant): " + u.Name + " bukan pengguna RS ini."
+	default:
+		return u.Name + " sedang nonaktif, jadi tidak bisa menjadi penanggung jawab tindakan."
 	}
 }
