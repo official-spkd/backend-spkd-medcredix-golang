@@ -24,6 +24,8 @@ CREATE TABLE hospitals (
     hospital_class     VARCHAR(5),               
     province           VARCHAR(80),
     city               VARCHAR(80),
+    district           VARCHAR(80),
+    village            VARCHAR(100),
     bed_licensed       INTEGER      NOT NULL DEFAULT 0,
     bpjs_facility_code VARCHAR(30),
     satusehat_org_id   VARCHAR(80),
@@ -83,7 +85,7 @@ CREATE TABLE credential_documents (
     id             VARCHAR(40)  PRIMARY KEY,
     credential_id  VARCHAR(40)  NOT NULL REFERENCES practitioner_credentials(id),
     file_name      VARCHAR(255) NOT NULL,
-    file_type      VARCHAR(40),
+    file_type      VARCHAR(100), -- MIME, mis. DOCX = 71 karakter
     size_kb        INTEGER,
     uploaded_by_id VARCHAR(40)  REFERENCES users(id),
     status         VARCHAR(30),
@@ -105,7 +107,7 @@ CREATE TABLE requirements (
     doc_expiry        DATE,
     file_name         VARCHAR(255),
     file_key          VARCHAR(40),                      -- berkas terenkripsi di UPLOAD_DIR
-    file_type         VARCHAR(40),
+    file_type         VARCHAR(100), -- MIME, mis. DOCX = 71 karakter
     file_size         INTEGER,
     note              TEXT,
     UNIQUE (hospital_id, code)
@@ -171,7 +173,8 @@ CREATE TABLE early_warnings (
     status         VARCHAR(20)  NOT NULL DEFAULT 'baru'
         CHECK (status IN ('baru','diketahui','ditugaskan','teratasi')),
     assigned_to    VARCHAR(120),
-    due_date       DATE
+    due_date       DATE,
+    detected_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
 CREATE TABLE alert_rules (
@@ -345,7 +348,9 @@ CREATE TABLE digital_indicators (
     threshold     NUMERIC(10,2),
     weight        NUMERIC(5,2),
     direction     VARCHAR(10),                   
-    fhir_resource VARCHAR(60)
+    fhir_resource VARCHAR(60),
+    unit          VARCHAR(10),                   -- %, ms, jam (kosong = %)
+    source_system VARCHAR(60)                    -- sistem asal: EMR/RME, LIS, Farmasi, dst.
 );
 
 CREATE TABLE complaint_stats (
@@ -353,6 +358,12 @@ CREATE TABLE complaint_stats (
     hospital_id  VARCHAR(40) NOT NULL REFERENCES hospitals(id),
     month        VARCHAR(7)  NOT NULL,           
     total        INTEGER,
+    antrian      INTEGER,                        -- rincian keluhan per kategori (jumlah = total)
+    pelayanan    INTEGER,
+    obat         INTEGER,
+    administrasi INTEGER,
+    fasilitas    INTEGER,
+    lainnya      INTEGER,
     satisfaction NUMERIC(5,2),
     peer_avg     NUMERIC(5,2),
     UNIQUE (hospital_id, month)
@@ -364,10 +375,15 @@ CREATE TABLE data_sources (
     name         VARCHAR(120) NOT NULL,
     type         VARCHAR(30),                    
     status       VARCHAR(20),
-    auth_method  VARCHAR(30),                    
+    auth_method  VARCHAR(60),                    
     success_rate NUMERIC(5,2),
     coverage_pct NUMERIC(5,2),
-    last_sync_at TIMESTAMPTZ
+    last_sync_at TIMESTAMPTZ,
+    config_summary VARCHAR(200),
+    avg_latency_ms INTEGER,
+    uptime_30d     NUMERIC(5,2),
+    fhir_resources INTEGER,
+    notes          TEXT
 );
 
 CREATE TABLE integration_jobs (
