@@ -38,6 +38,8 @@ type Hospital struct {
 	HospitalClass    *string   `gorm:"column:hospital_class" json:"hospital_class"`
 	Province         *string   `gorm:"column:province" json:"province"`
 	City             *string   `gorm:"column:city" json:"city"`
+	District         *string   `gorm:"column:district" json:"district"`
+	Village          *string   `gorm:"column:village" json:"village"`
 	BedLicensed      int       `gorm:"column:bed_licensed" json:"bed_licensed"`
 	BPJSFacilityCode *string   `gorm:"column:bpjs_facility_code" json:"bpjs_facility_code"`
 	SatusehatOrgID   *string   `gorm:"column:satusehat_org_id" json:"satusehat_org_id"`
