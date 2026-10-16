@@ -127,6 +127,9 @@ func Migrate(d *gorm.DB) error {
 // upgrade: perubahan skema untuk database yang sudah terpasang (aman dijalankan berulang).
 // CHECK risiko memakai NOT VALID: baris lama tidak diperiksa, hanya data baru.
 // Kolom file_* / storage_key untuk berkas unggahan.
+// early_warnings.detected_at = waktu deteksi (timestamp di Early Warning Center & dasar urutan).
+// file_type diperlebar ke 100 karakter: MIME DOCX lebih panjang dari 40 karakter.
+// hospitals.district / village = kecamatan & kelurahan/desa (dropdown wilayah Kepmendagri).
 func upgrade(d *gorm.DB) error {
 	return d.Exec(`ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_status_check;
 		ALTER TABLE actions ADD CONSTRAINT actions_status_check CHECK (status IN ('baru','ditugaskan',
@@ -139,7 +142,37 @@ func upgrade(d *gorm.DB) error {
 		ALTER TABLE requirements ADD COLUMN IF NOT EXISTS file_size INTEGER;
 		ALTER TABLE credential_documents ADD COLUMN IF NOT EXISTS storage_key VARCHAR(40);
 		ALTER TABLE credential_documents ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMPTZ;
-		CREATE INDEX IF NOT EXISTS idx_cred_docs_cred ON credential_documents(credential_id)`).Error
+		ALTER TABLE early_warnings ADD COLUMN IF NOT EXISTS detected_at TIMESTAMPTZ NOT NULL DEFAULT now();
+		ALTER TABLE credential_documents ALTER COLUMN file_type TYPE VARCHAR(100);
+		ALTER TABLE requirements ALTER COLUMN file_type TYPE VARCHAR(100);
+		ALTER TABLE digital_indicators ADD COLUMN IF NOT EXISTS unit VARCHAR(10);
+		ALTER TABLE digital_indicators ADD COLUMN IF NOT EXISTS source_system VARCHAR(60);
+		ALTER TABLE data_sources ALTER COLUMN auth_method TYPE VARCHAR(60);
+		ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS config_summary VARCHAR(200);
+		ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS avg_latency_ms INTEGER;
+		ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS uptime_30d NUMERIC(5,2);
+		ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS fhir_resources INTEGER;
+		ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS notes TEXT;
+		ALTER TABLE complaint_stats ADD COLUMN IF NOT EXISTS antrian INTEGER;
+		ALTER TABLE complaint_stats ADD COLUMN IF NOT EXISTS pelayanan INTEGER;
+		ALTER TABLE complaint_stats ADD COLUMN IF NOT EXISTS obat INTEGER;
+		ALTER TABLE complaint_stats ADD COLUMN IF NOT EXISTS administrasi INTEGER;
+		ALTER TABLE complaint_stats ADD COLUMN IF NOT EXISTS fasilitas INTEGER;
+		ALTER TABLE complaint_stats ADD COLUMN IF NOT EXISTS lainnya INTEGER;
+		UPDATE complaint_stats c SET antrian = v.a, pelayanan = v.p, obat = v.o, administrasi = v.ad,
+		fasilitas = v.f, lainnya = v.l FROM (VALUES
+		('cs_ns_2026-04', 6, 6, 3, 4, 2, 1), ('cs_ns_2026-05', 5, 5, 3, 3, 2, 1),
+		('cs_ns_2026-06', 4, 6, 2, 3, 2, 1), ('cs_ns_2026-07', 5, 6, 3, 3, 2, 1),
+		('cs_ns_2026-08', 4, 5, 2, 3, 2, 1), ('cs_ns_2026-09', 3, 5, 2, 3, 1, 1)
+		) AS v(id, a, p, o, ad, f, l) WHERE c.id = v.id AND c.antrian IS NULL;
+		UPDATE complaint_stats SET antrian = floor(total * 0.27), pelayanan = floor(total * 0.30),
+		obat = floor(total * 0.13), administrasi = floor(total * 0.17), fasilitas = floor(total * 0.08),
+		lainnya = total - floor(total * 0.27) - floor(total * 0.30) - floor(total * 0.13)
+		- floor(total * 0.17) - floor(total * 0.08)
+		WHERE antrian IS NULL AND total IS NOT NULL;
+		CREATE INDEX IF NOT EXISTS idx_cred_docs_cred ON credential_documents(credential_id);
+		ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS district VARCHAR(80);
+		ALTER TABLE hospitals ADD COLUMN IF NOT EXISTS village VARCHAR(100)`).Error
 }
 
 // splitSQL membuang komentar "-- ..." lalu memecah per statement (;).
