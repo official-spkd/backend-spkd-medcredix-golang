@@ -3,6 +3,7 @@ package seed
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -67,10 +68,13 @@ func seedRiskWarningAction(tx *gorm.DB) error {
 	}
 	var warnRows []model.EarlyWarning
 	for i, w := range warns {
+		// Waktu deteksi bertahap: peringatan pertama paling baru, tiap peringatan berikutnya 7 jam lebih awal.
+		detected := at(0).Add(-time.Duration(i*7) * time.Hour)
 		row := model.EarlyWarning{
 			ID: fmt.Sprintf("ew_ns_%03d", i+1), HospitalID: hNS, Code: fmt.Sprintf("EW-%03d", i+1),
 			Title: w.title, Severity: w.sev, ThresholdRule: sp(w.rule), TriggerValue: sp(w.trig), Status: w.status,
 			AssignedTo: sp(w.assigned),
+			DetectedAt: &detected,
 		}
 		if w.due != 0 {
 			row.DueDate = day(w.due)
