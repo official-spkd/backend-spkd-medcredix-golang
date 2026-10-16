@@ -5,6 +5,8 @@ import "time"
 type Indicator struct {
 	Name      string   `json:"name"`
 	Source    string   `json:"source,omitempty"` // resource FHIR
+	System    string   `json:"system,omitempty"` // sistem asal data (EMR/RME, LIS, ...)
+	Unit      string   `json:"unit,omitempty"`   // %, ms, jam (kosong = %)
 	Value     *float64 `json:"value"`
 	Threshold *float64 `json:"threshold"`
 	Direction string   `json:"direction"` // up | down
