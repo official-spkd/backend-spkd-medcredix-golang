@@ -74,7 +74,7 @@ func GetScores(db *gorm.DB) gin.HandlerFunc {
 					"Patient Safety 14%, Clinical Workforce 12%, Clinical Pathway 10%, Digital Maturity 10%, Medication 8%, Diagnostik 8%, Interop 8%.",
 				"formulaVersion": scoring.FormulaVersion, "domains": list,
 				"healthScore": intel["healthScore"], "bcds": intel["bcds"], "trust": intel["trust"], "kelompok": intel["kelompok"],
-				"stageTable": stageTable, "risks": openRisks(6), "evidence": evidence, "actions": actions,
+				"kelompokDetail": intel["kelompokDetail"], "stageTable": stageTable, "risks": openRisks(6), "evidence": evidence, "actions": actions,
 				"trend": intel["trend"], "recommendations": healthRecs(domains),
 			})
 			return
@@ -84,7 +84,8 @@ func GetScores(db *gorm.DB) gin.HandlerFunc {
 				"kind": "bcds",
 				"formula": "BPJS Credential Readiness (BDCS) = (Kelompok A × 25%) + (B × 30%) + (C × 35%) + (D × 10%), " +
 					"lalu dikalikan Trust Multiplier — ditampilkan transparan.",
-				"kelompok": intel["kelompok"], "bcds": b, "trust": intel["trust"], "trustBands": trustBands,
+				"kelompok": intel["kelompok"], "kelompokDetail": intel["kelompokDetail"],
+				"bcds": b, "trust": intel["trust"], "trustBands": trustBands,
 				"stage": b["stage"], "lulus": b["lulus"], "prereqOk": b["prereqOk"], "trend": intel["trend"],
 				"formulaVersion": scoring.FormulaVersion, "stageTable": stageTable,
 			})
