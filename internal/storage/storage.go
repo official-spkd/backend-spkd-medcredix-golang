@@ -1,7 +1,9 @@
-// Package storage menyimpan berkas unggahan (PDF/JPG/PNG) terenkripsi AES-256-GCM di disk.
+// Package storage menyimpan berkas unggahan (PDF/DOC/DOCX) terenkripsi AES-256-GCM di disk.
 package storage
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -20,19 +22,26 @@ import (
 	"github.com/spkd/medcredix/internal/config"
 )
 
-// MaxSize = batas ukuran satu berkas (10 MB).
-const MaxSize = 10 << 20
+// MaxSize = batas ukuran satu berkas (5 MB).
+const MaxSize = 5 << 20
 
-// Jenis berkas yang diterima, dicek dari isi berkas (bukan dari nama/ekstensi).
+const (
+	mimePDF  = "application/pdf"
+	mimeDOC  = "application/msword"
+	mimeDOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
+
+// Jenis berkas yang diterima: hanya PDF dan dokumen Word (DOC/DOCX).
+// Dicek dari isi berkas (bukan dari nama/ekstensi), jadi gambar yang diganti namanya tetap ditolak.
 var allowed = map[string]string{
-	"application/pdf": ".pdf",
-	"image/jpeg":      ".jpg",
-	"image/png":       ".png",
+	mimePDF:  ".pdf",
+	mimeDOC:  ".doc",
+	mimeDOCX: ".docx",
 }
 
 var (
-	ErrTooLarge = errors.New("Ukuran berkas melebihi 10 MB.")
-	ErrType     = errors.New("Jenis berkas harus PDF, JPG, atau PNG.")
+	ErrTooLarge = errors.New("Ukuran berkas melebihi 5 MB.")
+	ErrType     = errors.New("Jenis berkas harus PDF atau Word (DOC/DOCX).")
 	ErrEmpty    = errors.New("Berkas kosong.")
 	ErrNotFound = errors.New("Berkas tidak ditemukan di penyimpanan.")
 
@@ -99,8 +108,8 @@ func Save(r io.Reader) (key, mime string, size int, err error) {
 	if len(data) > MaxSize {
 		return "", "", 0, ErrTooLarge
 	}
-	mime = http.DetectContentType(data)
-	if _, ok := allowed[mime]; !ok {
+	mime = detectType(data)
+	if mime == "" {
 		return "", "", 0, ErrType
 	}
 
@@ -125,6 +134,36 @@ func Save(r io.Reader) (key, mime string, size int, err error) {
 		return "", "", 0, err
 	}
 	return key, mime, len(data), nil
+}
+
+// oleMagic = tanda awal berkas Office lama (DOC/XLS/PPT memakai format OLE yang sama).
+var oleMagic = []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
+
+// wordStream = nama stream "WordDocument" (UTF-16LE) yang hanya ada di berkas .doc, bukan XLS/PPT.
+var wordStream = []byte("W\x00o\x00r\x00d\x00D\x00o\x00c\x00u\x00m\x00e\x00n\x00t\x00")
+
+// detectType mengenali PDF, DOC, dan DOCX dari isi berkas. Jenis lain mengembalikan "".
+func detectType(data []byte) string {
+	switch {
+	case http.DetectContentType(data) == mimePDF:
+		return mimePDF
+	case bytes.HasPrefix(data, oleMagic):
+		if bytes.Contains(data, wordStream) {
+			return mimeDOC
+		}
+	case bytes.HasPrefix(data, []byte("PK\x03\x04")):
+		// DOCX = arsip ZIP yang berisi word/document.xml (XLSX/PPTX/ZIP biasa ditolak).
+		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			return ""
+		}
+		for _, f := range zr.File {
+			if f.Name == "word/document.xml" {
+				return mimeDOCX
+			}
+		}
+	}
+	return ""
 }
 
 // Open membaca dan mendekripsi berkas.
