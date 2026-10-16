@@ -1,7 +1,10 @@
 package controller
 
 import (
+	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -9,6 +12,7 @@ import (
 	"github.com/spkd/medcredix/internal/audit"
 	"github.com/spkd/medcredix/internal/auth"
 	"github.com/spkd/medcredix/internal/model"
+	"github.com/spkd/medcredix/internal/wilayah"
 )
 
 var roleOrder = []string{"super_admin", "admin_rs", "hospital_mgmt", "credential_officer", "medical_committee",
@@ -32,7 +36,7 @@ func GetSettings(db *gorm.DB) gin.HandlerFunc {
 		for _, u := range us {
 			users = append(users, J{
 				"id": u.ID, "name": u.Name, "email": u.Email, "role": u.Role, "roleLabel": strOr(ptrOrNil(auth.RoleLabels[u.Role]), u.Role),
-				"title": sv(u.Title), "active": u.Active, "lastLogin": tv(u.LastLogin),
+				"title": sv(u.Title), "active": u.Active, "lastLogin": tv(u.LastLogin), "hospitalId": sv(u.HospitalID),
 			})
 		}
 		roles := make([]J, 0, len(roleOrder))
@@ -64,16 +68,18 @@ func PatchSettings(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		var body struct {
-			Target           string  `json:"target"`
-			ID               string  `json:"id"`
-			Active           *bool   `json:"active"`
-			Name             *string `json:"name"`
-			Class            *string `json:"class"`
-			City             *string `json:"city"`
-			Province         *string `json:"province"`
-			BedLicensed      *int    `json:"bedLicensed"`
-			BPJSFacilityCode *string `json:"bpjsFacilityCode"`
-			SatusehatOrgID   *string `json:"satusehatOrgId"`
+			Target           string          `json:"target"`
+			ID               string          `json:"id"`
+			Active           *bool           `json:"active"`
+			Name             *string         `json:"name"`
+			Class            *string         `json:"class"`
+			City             *string         `json:"city"`
+			Province         *string         `json:"province"`
+			District         *string         `json:"district"`
+			Village          *string         `json:"village"`
+			BedLicensed      json.RawMessage `json:"bedLicensed"` // dibaca mentah agar desimal/teks/kosong bisa ditolak dengan pesan jelas
+			BPJSFacilityCode *string         `json:"bpjsFacilityCode"`
+			SatusehatOrgID   *string         `json:"satusehatOrgId"`
 		}
 		if !bindBody(c, &body) {
 			return
@@ -90,18 +96,58 @@ func PatchSettings(db *gorm.DB) gin.HandlerFunc {
 				fail(c, http.StatusBadRequest, "Nama RS wajib diisi.")
 				return
 			}
-			set("name", body.Name)
-			set("hospital_class", body.Class)
-			set("city", body.City)
-			set("province", body.Province)
-			set("bpjs_facility_code", body.BPJSFacilityCode)
-			set("satusehat_org_id", body.SatusehatOrgID)
-			if body.BedLicensed != nil {
-				if *body.BedLicensed < 0 {
-					fail(c, http.StatusBadRequest, "Jumlah TT tidak valid.")
+			if body.Class != nil {
+				cls, valid := parseHospitalClass(*body.Class)
+				if !valid {
+					fail(c, http.StatusBadRequest, "Kelas RS harus A, B, C, atau D.")
 					return
 				}
-				upd["bed_licensed"] = *body.BedLicensed
+				upd["hospital_class"] = cls
+			}
+			// Wilayah dicek berurutan (provinsi > kab/kota > kecamatan > kelurahan/desa) bila ada yang diubah.
+			// Nilai lama yang tidak diubah tetap diterima, supaya profil lama tetap bisa disimpan.
+			var cur model.Hospital
+			if notFound(c, db.First(&cur, "id = ?", hid).Error, "RS tidak ditemukan.") {
+				return
+			}
+			pick := func(v, old *string) (string, bool) {
+				if v == nil {
+					return sv0(old), false
+				}
+				return strings.TrimSpace(*v), strings.TrimSpace(*v) != sv0(old)
+			}
+			prov, c1 := pick(body.Province, cur.Province)
+			city, c2 := pick(body.City, cur.City)
+			dist, c3 := pick(body.District, cur.District)
+			vill, c4 := pick(body.Village, cur.Village)
+			set("name", body.Name)
+			if c1 || c2 || c3 || c4 {
+				region, msg := wilayah.Resolve(prov, city, dist, vill)
+				if msg != "" {
+					fail(c, http.StatusBadRequest, msg)
+					return
+				}
+				for i, col := range []string{"province", "city", "district", "village"} {
+					upd[col] = ptrOrNil(region[i]) // simpan nama baku; tingkat yang kosong jadi NULL
+				}
+			}
+			// Kode faskes BPJS hanya dicek bila diubah, supaya nilai lama tetap bisa disimpan.
+			if body.BPJSFacilityCode != nil && strings.TrimSpace(*body.BPJSFacilityCode) != sv0(cur.BPJSFacilityCode) {
+				code, msg := parseBPJSFacilityCode(body.BPJSFacilityCode)
+				if msg != "" {
+					fail(c, http.StatusBadRequest, msg)
+					return
+				}
+				upd["bpjs_facility_code"] = code
+			}
+			set("satusehat_org_id", body.SatusehatOrgID)
+			if len(body.BedLicensed) > 0 {
+				beds, msg := parseBedLicensed(body.BedLicensed)
+				if msg != "" {
+					fail(c, http.StatusBadRequest, msg)
+					return
+				}
+				upd["bed_licensed"] = beds
 			}
 			if len(upd) > 0 {
 				if dbFail(c, audit.UpdateWithAudit(db, user, hid, "hospitals", hid, upd, metaOf(c))) {
@@ -131,4 +177,49 @@ func PatchSettings(db *gorm.DB) gin.HandlerFunc {
 			fail(c, http.StatusBadRequest, "Target tidak dikenal.")
 		}
 	}
+}
+
+// sv0: isi pointer string (kosong bila nil), sudah di-trim.
+func sv0(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return strings.TrimSpace(*p)
+}
+
+// parseHospitalClass: kelas RS hanya A, B, C, atau D (huruf kecil diterima lalu disimpan huruf besar).
+func parseHospitalClass(v string) (string, bool) {
+	cls := strings.ToUpper(strings.TrimSpace(v))
+	switch cls {
+	case "A", "B", "C", "D":
+		return cls, true
+	}
+	return "", false
+}
+
+// parseBedLicensed: jumlah TT terlisensi wajib bilangan bulat > 0.
+// Menolak kosong, null, 0, negatif, desimal (240.5 / "240,5"), dan teks.
+func parseBedLicensed(raw json.RawMessage) (int, string) {
+	v := strings.TrimSpace(string(raw))
+	if v == "null" {
+		return 0, "Jumlah TT terlisensi wajib diisi."
+	}
+	if strings.HasPrefix(v, `"`) {
+		var s string
+		if json.Unmarshal(raw, &s) != nil {
+			return 0, "Jumlah TT terlisensi tidak valid."
+		}
+		v = strings.TrimSpace(s)
+	}
+	if v == "" {
+		return 0, "Jumlah TT terlisensi wajib diisi."
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, "Jumlah TT terlisensi harus bilangan bulat (tanpa koma atau desimal)."
+	}
+	if n <= 0 {
+		return 0, "Jumlah TT terlisensi harus lebih dari 0."
+	}
+	return n, ""
 }
