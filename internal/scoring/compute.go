@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -430,6 +431,12 @@ func dimScore(d Data, dim string) (float64, []Indicator, int) {
 		if x.FHIRResource != nil {
 			ind.Source = *x.FHIRResource
 		}
+		if x.SourceSystem != nil {
+			ind.System = *x.SourceSystem
+		}
+		if x.Unit != nil {
+			ind.Unit = *x.Unit
+		}
 		inds = append(inds, ind)
 		rows = append(rows, weighted{sc, w})
 	}
@@ -467,6 +474,14 @@ func digitalDomain(d Data) (DomainResult, float64, float64) {
 		Indicators: append(append([]Indicator{}, emrInds...), infraInds...),
 		Notes:      []string{fmt.Sprintf("Skor EMR %.1f (RI %.1f%%, RJ %.1f%%), Infrastruktur %.1f.", emr, ri, rj, infra)},
 	}
+	// Keterangan latensi API rata-rata (indikator infrastruktur, arah turun).
+	if x, ok := findIndicator(d, "Latensi API", dimInfra); ok && x.MetricValue != nil {
+		note := fmt.Sprintf("Latensi API rata-rata %s ms", strconv.FormatFloat(*x.MetricValue, 'f', -1, 64))
+		if x.Threshold != nil {
+			note += fmt.Sprintf(" (ambang <= %s ms)", strconv.FormatFloat(*x.Threshold, 'f', -1, 64))
+		}
+		res.Notes = append(res.Notes, note+".")
+	}
 	if !res.HasData {
 		res.Notes = []string{"Data indikator EMR/infrastruktur belum tersedia (dihitung 0)."}
 	}
@@ -500,7 +515,12 @@ func safetyDomain(d Data) (DomainResult, SafetyResult) {
 	found := 0
 	var sum float64
 	for _, p := range safetyParts {
-		if x, ok := findIndicator(d, p.Contains); ok {
+		// Utamakan indikator dimensi keselamatan; "Kelengkapan Data Alergi" (Medikasi) jangan ikut terambil.
+		x, ok := findIndicator(d, p.Contains, dimSafety)
+		if !ok {
+			x, ok = findIndicator(d, p.Contains)
+		}
+		if ok {
 			parts[p.Key] = val(x.MetricValue)
 			found++
 		}
