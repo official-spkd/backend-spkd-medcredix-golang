@@ -111,18 +111,37 @@ func feDomain(in scoring.Intelligence, d scoring.DomainResult) J {
 	inds := make([]J, 0, len(d.Indicators))
 	positives, negatives := []string{}, []string{}
 	for _, i := range d.Indicators {
+		unit := i.Unit
+		if unit == "" {
+			unit = "%"
+		}
+		// "source" = sistem asal (EMR/RME, LIS, ...) bila ada; "fhir" = resource FHIR.
+		source := i.System
+		if source == "" {
+			source = i.Source
+		}
+		var note interface{}
+		if i.Note != "" {
+			note = i.Note
+		}
 		inds = append(inds, J{
-			"label": i.Name, "value": fv(i.Value), "unit": "%", "threshold": fv(i.Threshold),
-			"status": indicatorStatusLabel(i.Status), "weight": i.Weight, "source": i.Source,
-			"fhir": i.Source, "note": i.Note,
+			"label": i.Name, "value": fv(i.Value), "unit": unit, "threshold": fv(i.Threshold),
+			"status": indicatorStatusLabel(i.Status), "weight": i.Weight, "source": source,
+			"fhir": i.Source, "note": note, "direction": i.Direction,
 		})
 		if i.Value == nil {
 			negatives = append(negatives, i.Name+": data belum tersedia")
 			continue
 		}
-		txt := fmt.Sprintf("%s: %s%%", i.Name, fmtNum(*i.Value))
+		withUnit := func(v float64) string {
+			if unit == "%" {
+				return fmtNum(v) + "%"
+			}
+			return fmtNum(v) + " " + unit
+		}
+		txt := fmt.Sprintf("%s: %s", i.Name, withUnit(*i.Value))
 		if i.Threshold != nil {
-			txt += fmt.Sprintf(" (ambang %s%%)", fmtNum(*i.Threshold))
+			txt += fmt.Sprintf(" (ambang %s)", withUnit(*i.Threshold))
 		}
 		if i.Status == "ok" {
 			positives = append(positives, txt)
@@ -146,18 +165,27 @@ func loadTrend(db *gorm.DB, hid string, in scoring.Intelligence) []J {
 	var snaps []model.ScoreSnapshot
 	db.Where("hospital_id = ?", hid).Order("period DESC").Limit(6).Find(&snaps)
 	sort.Slice(snaps, func(i, j int) bool { return snaps[i].Period < snaps[j].Period })
+
+	// Bulan berjalan selalu memakai skor live (sama dengan KPI dan ringkasan laporan).
+	// Snapshot bulan ini di score_snapshots hanya diperbarui lewat POST /scores/snapshot,
+	// jadi kalau dipakai apa adanya, titik terakhir tren bisa beda dengan skor yang tampil.
+	current := time.Now().Format("2006-01")
 	out := make([]J, 0, len(snaps)+1)
 	for _, s := range snaps {
+		if s.Period >= current {
+			continue
+		}
 		out = append(out, J{
 			"period": s.Period, "health": fv(s.HealthScore), "bcds": fv(s.BDCS), "trust": fv(s.Trust),
 			"ccs": fv(s.CCS), "cpcs": fv(s.CPCS), "safety": fv(s.SafetyScore),
 		})
 	}
-	if len(out) == 0 {
-		out = append(out, J{
-			"period": time.Now().Format("2006-01"), "health": in.HealthScore, "bcds": in.BDCS,
-			"trust": in.Trust.Score, "ccs": fv(in.Claim.CCS), "cpcs": fv(in.Pathway.CPCS), "safety": fv(in.SafetyScore),
-		})
+	out = append(out, J{
+		"period": current, "health": in.HealthScore, "bcds": in.BDCS,
+		"trust": in.Trust.Score, "ccs": fv(in.Claim.CCS), "cpcs": fv(in.Pathway.CPCS), "safety": fv(in.SafetyScore),
+	})
+	if len(out) > 6 {
+		out = out[len(out)-6:]
 	}
 	return out
 }
@@ -250,6 +278,8 @@ func feIntel(db *gorm.DB, hid string, in scoring.Intelligence) J {
 			"stage": in.StageEffective, "lulus": in.Pass, "prereqOk": !in.GateBlocked,
 		},
 		"kelompok": kelompok,
+		// Rincian tiap kelompok (label, bobot, komponen + skornya) untuk info perhitungan di drawer BDCS.
+		"kelompokDetail": in.Groups,
 		"ccs": J{
 			"score": ccs, "grade": in.Claim.Grade, "subs": subs,
 			"flaggedClaims": in.Claim.FlaggedClaims, "totalClaims": in.Claim.TotalClaims,
