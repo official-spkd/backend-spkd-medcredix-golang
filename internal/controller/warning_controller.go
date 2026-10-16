@@ -27,7 +27,9 @@ func GetWarnings(db *gorm.DB) gin.HandlerFunc {
 			q = q.Where("status = ?", codeOf(v))
 		}
 		var rows []model.EarlyWarning
-		if dbFail(c, q.Order("code").Find(&rows).Error) {
+		// Urutan: status (baru → teratasi), lalu waktu deteksi terbaru. Sort status di bawah stabil,
+		// jadi urutan detected_at DESC dari query tetap terjaga di dalam tiap status.
+		if dbFail(c, q.Order("detected_at DESC, code").Find(&rows).Error) {
 			return
 		}
 		statusOrder := map[string]int{"baru": 0, "diketahui": 1, "ditugaskan": 2, "teratasi": 3}
