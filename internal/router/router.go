@@ -55,6 +55,7 @@ func NewRouter(db *gorm.DB) (*gin.Engine, error) {
 	s.GET("/reports", view, controller.GetReports(db))
 	s.GET("/settings", view, controller.GetSettings(db))
 	s.GET("/data", view, controller.GetData(db))
+	s.GET("/regions", controller.GetRegions) // daftar wilayah untuk dropdown (semua pengguna yang login)
 
 	// Ubah (izin per aksi dicek di dalam handler)
 	s.PATCH("/risks", controller.PatchRisks(db))
@@ -65,9 +66,14 @@ func NewRouter(db *gorm.DB) (*gin.Engine, error) {
 	s.PATCH("/requirements", controller.PatchRequirements(db))
 	s.POST("/requirements/upload", controller.UploadRequirementFile(db))
 	s.POST("/documents/upload", controller.UploadDocument(db))
+	s.PATCH("/documents", controller.PatchDocuments(db))
 	s.PATCH("/claims", controller.PatchClaims(db))
 	s.POST("/reports", controller.PostReports(db))
 	s.PATCH("/settings", controller.PatchSettings(db))
+	s.POST("/users", controller.PostUsers(db))   // Admin RS & Super Admin (dicek di handler)
+	s.PATCH("/users", controller.PatchUsers(db)) // Admin RS & Super Admin (dicek di handler)
+	s.POST("/hospitals", controller.PostHospitals(db)) // khusus Super Admin (dicek di handler)
+	s.GET("/hospital-directory", controller.GetHospitalDirectory(db)) // daftar RS Kemenkes, khusus Super Admin
 	s.POST("/data", middleware.RequirePermission(auth.PermConfigure), controller.PostData(db))
 	s.POST("/scores/snapshot", middleware.RequirePermission(auth.PermConfigure), controller.PostScoreSnapshot(db))
 
