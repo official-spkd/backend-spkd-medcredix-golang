@@ -2,7 +2,6 @@ package seed
 
 import (
 	"fmt"
-	"time"
 
 	"gorm.io/gorm"
 
@@ -56,32 +55,8 @@ func seedIntelligence(tx *gorm.DB) error {
 		return err
 	}
 
-	// indikator digital. Urutan sengaja: "Kelengkapan Data Alergi" (93) muncul sebelum
-	// "Skrining Alergi Sebelum Peresepan" (96) - kasus uji urutan indikator di scoring engine.
-	type di struct {
-		dim, name, fhir, dir string
-		val, thr, w          float64
-	}
-	inds := []di{
-		{"Keselamatan Pasien", "Kelengkapan Data Alergi", "AllergyIntolerance", "higher", 93, 90, 10},
-		{"Keselamatan Pasien", "Skrining Alergi Sebelum Peresepan", "AllergyIntolerance", "higher", 96, 90, 30},
-		{"Keselamatan Pasien", "Closed-loop Medikasi", "MedicationDispense", "higher", 78, 85, 30},
-		{"Keselamatan Pasien", "Kelengkapan Resume Pemulangan", "Composition", "higher", 85, 90, 30},
-		{"Digital", "Digitalisasi Laboratorium", "DiagnosticReport", "higher", 92, 80, 10},
-		{"Digital", "Digitalisasi Radiologi", "ImagingStudy", "higher", 88, 80, 10},
-		{"Digital", "Rekam Medis Elektronik Terisi", "Encounter", "higher", 90, 85, 15},
-		{"Interoperabilitas", "Latensi API FHIR (ms)", "Patient", "lower", 280, 300, 15},
-		{"Interoperabilitas", "Keberhasilan Sinkronisasi (%)", "Encounter", "higher", 94, 90, 15},
-		{"Interoperabilitas", "Cakupan Resource FHIR (%)", "Patient", "higher", 88, 85, 15},
-		{"Medikasi", "Verifikasi Barcode Obat (%)", "MedicationRequest", "higher", 76, 85, 20},
-		{"Diagnostik", "Hasil Lab Terintegrasi (%)", "Observation", "higher", 91, 85, 20},
-	}
-	var dis []model.DigitalIndicator
-	for i, x := range inds {
-		dis = append(dis, model.DigitalIndicator{ID: fmt.Sprintf("dig_ns_%02d", i+1), HospitalID: hNS,
-			Dimension: sp(x.dim), Indicator: x.name, MetricValue: f64(x.val), Threshold: f64(x.thr),
-			Weight: f64(x.w), Direction: sp(x.dir), FHIRResource: sp(x.fhir)})
-	}
+	// indikator digital (katalog lengkap di seed_catalog.go)
+	dis := nsIndicators()
 	if err := ins(tx, dis); err != nil {
 		return err
 	}
@@ -89,6 +64,8 @@ func seedIntelligence(tx *gorm.DB) error {
 	// keluhan & utilisasi 6 bulan (Sep 2026: keluhan 15, kepuasan 87%, ALOS 5,3, readmisi 4,9%, BOR 81%)
 	months := []string{"2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"}
 	complaints := []int{22, 19, 18, 20, 17, 15}
+	// rincian per kategori: antrian, pelayanan, obat, administrasi, fasilitas, lainnya (jumlah = total)
+	cats := [][6]int{{6, 6, 3, 4, 2, 1}, {5, 5, 3, 3, 2, 1}, {4, 6, 2, 3, 2, 1}, {5, 6, 3, 3, 2, 1}, {4, 5, 2, 3, 2, 1}, {3, 5, 2, 3, 1, 1}}
 	satisf := []float64{82, 83, 85, 84, 86, 87}
 	alos := []float64{5.9, 5.7, 5.6, 5.5, 5.4, 5.3}
 	readm := []float64{6.1, 5.8, 5.5, 5.2, 5.0, 4.9}
@@ -97,7 +74,9 @@ func seedIntelligence(tx *gorm.DB) error {
 	var us []model.UtilizationStat
 	for i, m := range months {
 		cs = append(cs, model.ComplaintStat{ID: "cs_ns_" + m, HospitalID: hNS, Month: m,
-			Total: num(complaints[i]), Satisfaction: f64(satisf[i]), PeerAvg: f64(84)})
+			Total: num(complaints[i]), Antrian: num(cats[i][0]), Pelayanan: num(cats[i][1]), Obat: num(cats[i][2]),
+			Administrasi: num(cats[i][3]), Fasilitas: num(cats[i][4]), Lainnya: num(cats[i][5]),
+			Satisfaction: f64(satisf[i]), PeerAvg: f64(84)})
 		us = append(us, model.UtilizationStat{ID: "us_ns_" + m, HospitalID: hNS, Month: m,
 			ALOS: f64(alos[i]), Readmission: f64(readm[i]), BOR: f64(bor[i])})
 	}
@@ -173,19 +152,20 @@ func seedIntelligence(tx *gorm.DB) error {
 			FHIRResource: sp(fhir), RecordCount: num(cnt), ValidationStatus: sp(vs)})
 	}
 	for i, m := range []string{"Hospital Health Score", "BDCS", "Trust Score", "CCS", "CPCS", "Utilization Review", "Patient Safety", "Workforce"} {
-		add("skor", fmt.Sprintf("skor_%d", i+1), m, "lihat scoring engine", "SIMRS Utama", "Encounter", 100+i*20, "valid")
+		add("skor", fmt.Sprintf("skor_%d", i+1), m, "lihat scoring engine", "SIMRS Inti Sehat (Core HIS)", "Encounter", 100+i*20, "valid")
 	}
 	for _, r := range []string{"rsk_ns_001", "rsk_ns_001", "rsk_ns_002", "rsk_ns_004", "rsk_ns_007", "rsk_ns_008"} { // RSK-003 sengaja tanpa bukti
-		add("risiko", r, "Rekaman terdampak", "terverifikasi", "SIMRS Utama", "Practitioner", 14, "valid")
+		add("risiko", r, "Rekaman terdampak", "terverifikasi", "SIMRS Inti Sehat (Core HIS)", "Practitioner", 14, "valid")
 	}
 	for i := 0; i < 6; i++ {
-		add("indikator", fmt.Sprintf("dig_ns_%02d", i+1), inds[i].name, fmt.Sprintf("%.0f", inds[i].val), "SIMRS Utama", inds[i].fhir, 250, "valid")
+		x := nsIndicatorDefs[i]
+		add("indikator", fmt.Sprintf("dig_ns_%02d", i+1), x.name, fmt.Sprintf("%g", x.val), x.src, x.fhir, 250, "valid")
 	}
 	for _, c := range []string{"clm_ns_28", "clm_ns_28", "clm_ns_42"} { // CLM-00128 (2 bukti), CLM-00142 (1 bukti)
 		add("klaim", c, "Dokumen pendukung klaim", "lengkap", "BPJS VClaim", "Claim", 1, "valid")
 	}
 	for _, w := range []string{"ew_ns_001", "ew_ns_002", "ew_ns_004"} {
-		add("peringatan", w, "Pemicu peringatan", "tercatat", "SIMRS Utama", "Observation", 5, "valid")
+		add("peringatan", w, "Pemicu peringatan", "tercatat", "SIMRS Inti Sehat (Core HIS)", "Observation", 5, "valid")
 	}
 	for i := 1; i <= 4; i++ {
 		add("regulasi", fmt.Sprintf("reg_%02d", i), "Pemetaan pasal", "terpetakan", "Registri Regulasi", "", 2, "valid")
@@ -205,26 +185,12 @@ func seedIntelligence(tx *gorm.DB) error {
 
 // Sumber data, job integrasi, aturan peringatan, notifikasi.
 func seedPlatform(tx *gorm.DB) error {
-	// 10 sumber data RS Nusantara (7 SIMRS, 1 SATUSEHAT, 2 BPJS) + 18 job
-	type dsrc struct{ name, typ, status, auth string }
-	list := []dsrc{
-		{"SIMRS Utama", "SIMRS", "terhubung", "OAuth2"}, {"SIMRS Farmasi", "SIMRS", "terhubung", "OAuth2"},
-		{"SIMRS Laboratorium", "SIMRS", "terhubung", "API Key"}, {"SIMRS Radiologi (PACS)", "SIMRS", "terhubung", "API Key"},
-		{"SIMRS Rekam Medis", "SIMRS", "terhubung", "OAuth2"}, {"SIMRS Billing", "SIMRS", "perlu_perbaikan", "API Key"},
-		{"SIMRS Kepegawaian", "SIMRS", "terhubung", "API Key"}, {"SATUSEHAT Platform", "SATUSEHAT", "terhubung", "OAuth2"},
-		{"BPJS VClaim", "BPJS", "terhubung", "API Key"}, {"BPJS P-Care", "BPJS", "gagal", "API Key"},
-	}
-	var srcs []model.DataSource
+	// 10 sumber data RS Nusantara (katalog di seed_catalog.go) + 18 job
+	srcs := nsSources()
 	var jobs []model.IntegrationJob
 	jn := 0
-	for i, x := range list {
-		id := fmt.Sprintf("ds_ns_%02d", i+1)
-		rate := 98.0 - float64(i)*0.7
-		if x.status == "gagal" {
-			rate = 61.5
-		}
-		srcs = append(srcs, model.DataSource{ID: id, HospitalID: hNS, Name: x.name, Type: sp(x.typ), Status: sp(x.status),
-			AuthMethod: sp(x.auth), SuccessRate: f64(rate), CoveragePct: f64(95 - float64(i)*1.5), LastSyncAt: func() *time.Time { t := at(-i % 3); return &t }()})
+	for i, x := range srcs {
+		id := x.ID
 		count := 2
 		if i >= 8 {
 			count = 1
@@ -235,7 +201,7 @@ func seedPlatform(tx *gorm.DB) error {
 			if j == 1 {
 				jt = "sync_penuh"
 			}
-			if x.status == "gagal" {
+			if x.Status != nil && *x.Status == "gagal" {
 				st = "gagal"
 			}
 			jobs = append(jobs, model.IntegrationJob{ID: fmt.Sprintf("job_ns_%02d", jn), DataSourceID: id,
@@ -246,7 +212,7 @@ func seedPlatform(tx *gorm.DB) error {
 	srcs = append(srcs,
 		model.DataSource{ID: "ds_ms_01", HospitalID: hMS, Name: "SIMRS Utama", Type: sp("SIMRS"), Status: sp("terhubung"),
 			AuthMethod: sp("API Key"), SuccessRate: f64(90), CoveragePct: f64(70)},
-		model.DataSource{ID: "ds_ms_02", HospitalID: hMS, Name: "BPJS VClaim", Type: sp("BPJS"), Status: sp("terhubung"),
+		model.DataSource{ID: "ds_ms_02", HospitalID: hMS, Name: "BPJS VClaim", Type: sp("BPJS VClaim"), Status: sp("terhubung"),
 			AuthMethod: sp("API Key"), SuccessRate: f64(88), CoveragePct: f64(65)})
 	if err := ins(tx, srcs); err != nil {
 		return err
@@ -255,13 +221,17 @@ func seedPlatform(tx *gorm.DB) error {
 		return err
 	}
 
-	// aturan notifikasi
+	// aturan notifikasi (id ar_ns_NN mengikuti urutan; tambah aturan baru di akhir agar id lama tidak bergeser)
 	rules := []struct{ name, domain, metric, cond, sev, ch string }{
 		{"Kredensial <= 30 hari", "Kredensial", "expiry_days", "<= 30", "tinggi", "in-app,email"},
 		{"Sinyal klaim naik", "Klaim", "anomaly_growth", "> 15%", "tinggi", "in-app,email"},
 		{"Latensi FHIR tinggi", "Interoperabilitas", "fhir_latency_ms", "> 300", "sedang", "in-app"},
 		{"Adherence pathway rendah", "Clinical Pathway", "avg_adherence", "< 80", "sedang", "in-app"},
 		{"Prasyarat mendekati kedaluwarsa", "Prasyarat", "doc_expiry_days", "<= 45", "tinggi", "in-app,whatsapp"},
+		// BOR ideal 60-85% (sama dengan acuan skor Utilization Review di scoring/compute.go)
+		{"BOR melewati batas", "Utilisasi", "bor", "> 85%", "tinggi", "in-app,email"},
+		// anti-manipulasi: volume data yang ditarik melonjak jauh di atas rata-rata 30 hari
+		{"Lonjakan volume data (anti-manipulasi)", "Kualitas Data", "data_volume_spike", "> 30%", "tinggi", "in-app,email"},
 	}
 	var ar []model.AlertRule
 	for i, r := range rules {
