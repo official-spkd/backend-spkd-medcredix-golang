@@ -1,0 +1,68 @@
+# MedCredix produksi di VPS: PostgreSQL + backend + frontend + Caddy (HTTPS otomatis).
+# Jalankan dari folder backend di VPS:
+#   docker compose -f docker-compose.prod.yml up -d --build
+# Beda dengan docker-compose.yml (lokal):
+#   - DB, API, dan web TIDAK dibuka ke internet. Yang terbuka cuma Caddy (port 80/443).
+#   - Caddy otomatis minta & memperpanjang sertifikat HTTPS Let's Encrypt untuk DOMAIN.
+#   - Nilai rahasia diambil dari file .env (salin dari env.produksi.contoh).
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-medcredix}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?isi DB_PASSWORD di .env}
+      POSTGRES_DB: ${DB_NAME:-medcredix}
+      TZ: Asia/Jakarta
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_SSLMODE: disable # koneksi di jaringan internal Docker, tidak lewat internet
+      DB_PRIVATE_NETWORK: "true" # izinkan tanpa TLS karena container db tidak membuka port ke luar
+      UPLOAD_DIR: /app/uploads
+      TRUSTED_PROXIES: 172.16.0.0/12 # IP Caddy/Nginx di jaringan Docker
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ${FRONTEND_DIR:-../frontend}
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?isi DOMAIN di .env, contoh medcredix.spkd.ac.id}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:

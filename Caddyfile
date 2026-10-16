@@ -1,0 +1,9 @@
+# Caddy: HTTPS otomatis untuk {$DOMAIN}, lalu teruskan semua request ke container web (Nginx).
+# Nginx di container web yang meneruskan /api/ ke backend.
+{$DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 11MB
+	}
+	reverse_proxy web:80
+}

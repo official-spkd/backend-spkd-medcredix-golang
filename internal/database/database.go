@@ -43,8 +43,10 @@ func Open() (*gorm.DB, error) {
 			return nil, fmt.Errorf("DB_PASSWORD wajib diisi minimal 16 karakter saat APP_ENV=production")
 		}
 		local := host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasPrefix(host, "/")
-		if sslmode == "disable" && !local {
-			return nil, fmt.Errorf("DB_SSLMODE=disable ke database %q tidak aman di produksi (pakai require / verify-full)", host)
+		// DB_PRIVATE_NETWORK=true: database di jaringan privat yang tidak bisa diakses dari internet
+		// (mis. container "db" di docker-compose.prod.yml yang tidak membuka port), jadi tanpa TLS tetap aman.
+		if sslmode == "disable" && !local && !config.Bool("DB_PRIVATE_NETWORK") {
+			return nil, fmt.Errorf("DB_SSLMODE=disable ke database %q tidak aman di produksi (pakai require / verify-full, atau DB_PRIVATE_NETWORK=true bila DB hanya di jaringan privat)", host)
 		}
 	}
 
