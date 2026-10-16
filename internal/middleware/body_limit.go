@@ -9,7 +9,7 @@ import (
 	"github.com/spkd/medcredix/internal/storage"
 )
 
-// uploadLimit = batas body untuk endpoint unggah (berkas 10 MB + field form).
+// uploadLimit = batas body untuk endpoint unggah (berkas 5 MB + field form).
 const uploadLimit = storage.MaxSize + 1<<20
 
 // BodyLimit membatasi ukuran body request. Endpoint unggah (/upload) boleh sampai uploadLimit.
