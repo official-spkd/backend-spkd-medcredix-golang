@@ -55,6 +55,8 @@ func RunDemoData(d *gorm.DB) error {
 			{"clinical pathway", seedPathways},
 			{"data intelligence", seedIntelligence},
 			{"platform (sumber data, notifikasi)", seedPlatform},
+			{"katalog indikator & kanal integrasi", syncDemoCatalog},
+			{"kesiapan RS Medika", seedMedikaReadiness},
 		}
 		for _, st := range steps {
 			if err := st.fn(tx); err != nil {
