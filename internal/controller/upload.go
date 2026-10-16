@@ -24,7 +24,7 @@ func saveUpload(c *gin.Context, required bool) (key, mime, name string, size int
 		if strings.Contains(err.Error(), "too large") {
 			fail(c, http.StatusRequestEntityTooLarge, storage.ErrTooLarge.Error())
 		} else if err == http.ErrMissingFile {
-			fail(c, http.StatusBadRequest, "Pilih berkas dokumen (PDF, JPG, atau PNG).")
+			fail(c, http.StatusBadRequest, "Pilih berkas dokumen (PDF atau Word DOC/DOCX, maks 5 MB).")
 		} else {
 			fail(c, http.StatusBadRequest, "Berkas tidak terbaca.")
 		}
