@@ -2,6 +2,7 @@ package scoring
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -33,6 +34,9 @@ func Load(db *gorm.DB, hospitalID string, now time.Time) (Data, error) {
 			return d, fmt.Errorf("memuat %s: %w", s.name, err)
 		}
 	}
+
+	// Urutan indikator stabil (id), dipakai untuk urutan tampilan & pencarian kata kunci.
+	sort.SliceStable(d.Indicators, func(i, j int) bool { return d.Indicators[i].ID < d.Indicators[j].ID })
 
 	// pathway_episodes tidak punya hospital_id; difilter lewat pathway milik RS ini.
 	if len(d.Pathways) > 0 {
