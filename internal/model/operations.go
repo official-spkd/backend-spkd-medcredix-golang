@@ -35,6 +35,7 @@ type EarlyWarning struct {
 	Status        string     `gorm:"column:status;default:baru" json:"status"`
 	AssignedTo    *string    `gorm:"column:assigned_to" json:"assigned_to"`
 	DueDate       *time.Time `gorm:"column:due_date" json:"due_date"`
+	DetectedAt    *time.Time `gorm:"column:detected_at;default:now()" json:"detected_at"`
 }
 
 func (EarlyWarning) TableName() string { return "early_warnings" }
