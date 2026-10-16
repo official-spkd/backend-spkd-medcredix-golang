@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 
 	"gorm.io/gorm"
@@ -28,7 +29,7 @@ func sessionOf(u model.User) J {
 func feHospital(h model.Hospital, bedActive int) J {
 	return J{
 		"id": h.ID, "name": h.Name, "code": h.Code, "class": sv(h.HospitalClass), "city": sv(h.City),
-		"province": sv(h.Province), "bedLicensed": h.BedLicensed, "bedActive": bedActive,
+		"province": sv(h.Province), "district": sv(h.District), "village": sv(h.Village), "bedLicensed": h.BedLicensed, "bedActive": bedActive,
 		"bedNotOperating": maxInt(h.BedLicensed-bedActive, 0), "notOperatingNote": nil,
 		"bpjsFacilityCode": sv(h.BPJSFacilityCode), "satusehatOrgId": sv(h.SatusehatOrgID),
 		"tier": sv(h.Tier), "onboarding": h.Onboarding != nil && *h.Onboarding != "" && *h.Onboarding != "selesai",
@@ -50,9 +51,14 @@ func loadHospital(db *gorm.DB, hid string) (J, error) {
 	return feHospital(h, activeBeds(db, hid)), nil
 }
 
+// viewOnlyRoles: peran yang hanya melihat, jadi tidak bisa menjadi penanggung jawab aksi.
+var viewOnlyRoles = []string{"auditor", "viewer"}
+
+// userBriefs: daftar calon penanggung jawab aksi di RS ini.
+// Hanya akun aktif milik RS tersebut, tanpa Auditor dan Viewer (peran lihat saja).
 func userBriefs(db *gorm.DB, hid string) []J {
 	var users []model.User
-	db.Where("hospital_id = ?", hid).Order("name").Find(&users)
+	db.Where("hospital_id = ? AND active = ? AND role NOT IN ?", hid, true, viewOnlyRoles).Order("name").Find(&users)
 	out := make([]J, 0, len(users))
 	for _, u := range users {
 		out = append(out, J{"id": u.ID, "name": u.Name, "role": u.Role})
@@ -97,7 +103,7 @@ func feWarning(w model.EarlyWarning) J {
 	return J{
 		"id": w.ID, "hospitalId": w.HospitalID, "code": w.Code, "title": w.Title, "description": w.Title,
 		"severity": label(w.Severity), "domain": nil, "thresholdRule": str(w.ThresholdRule),
-		"triggerValue": str(w.TriggerValue), "detectedAt": nil, "status": label(w.Status),
+		"triggerValue": str(w.TriggerValue), "detectedAt": tv(w.DetectedAt), "status": label(w.Status),
 		"acknowledgedBy": nil, "acknowledgedAt": nil, "assignedTo": sv(w.AssignedTo), "dueDate": tv(w.DueDate),
 	}
 }
@@ -228,19 +234,33 @@ func feAnomaly(a model.ClaimAnomaly, claimNumber string) J {
 
 func fePathway(p model.ClinicalPathway, episodes []model.PathwayEpisode) J {
 	n, dev := 0, 0
+	losN, losOK := 0, 0
 	for _, e := range episodes {
 		if e.PathwayID == p.ID {
 			n++
 			if e.Documented != nil {
 				dev++
 			}
+			// Kepatuhan LOS bisa dihitung dari data yang ada: episode dengan LOS aktual ≤ LOS standar.
+			if e.LOSActual != nil && p.StandardLOS != nil {
+				losN++
+				if *e.LOSActual <= *p.StandardLOS {
+					losOK++
+				}
+			}
 		}
+	}
+	// Kepatuhan obat, lab, prosedur, dan cost ratio belum ada sumber datanya (butuh integrasi
+	// SIMRS: e-resep, LIS, order tindakan, billing), jadi dikirim nil dan FE menampilkan "Belum tersedia".
+	var losAdherence interface{}
+	if losN > 0 {
+		losAdherence = math.Round(float64(losOK)/float64(losN)*1000) / 10
 	}
 	return J{
 		"id": p.ID, "hospitalId": p.HospitalID, "diagnosis": p.Diagnosis, "icd10": sv(p.ICD10),
 		"standardLos": fv(p.StandardLOS), "targetAdherence": 85, "episodeCount": n,
 		"avgAdherence": fv(p.AvgAdherence), "medicationAdherence": nil, "labAdherence": nil,
-		"procedureAdherence": nil, "losAdherence": nil, "deviationCount": dev,
+		"procedureAdherence": nil, "losAdherence": losAdherence, "deviationCount": dev,
 		"documentedDeviation": fv(p.DocumentedDeviation), "costRatio": nil, "status": "Aktif",
 	}
 }
@@ -272,7 +292,8 @@ func feUtil(u model.UtilizationStat) J {
 func feComplaint(c model.ComplaintStat) J {
 	return J{
 		"id": c.ID, "hospitalId": c.HospitalID, "month": c.Month, "total": iv(c.Total),
-		"antrian": nil, "pelayanan": nil, "obat": nil, "administrasi": nil, "fasilitas": nil, "lainnya": nil,
+		"antrian": iv(c.Antrian), "pelayanan": iv(c.Pelayanan), "obat": iv(c.Obat),
+		"administrasi": iv(c.Administrasi), "fasilitas": iv(c.Fasilitas), "lainnya": iv(c.Lainnya),
 		"satisfaction": fv(c.Satisfaction), "per1000": nil, "peerAvg": fv(c.PeerAvg),
 	}
 }
@@ -309,16 +330,45 @@ func feAlertRule(r model.AlertRule) J {
 func feNotification(n model.Notification) J {
 	return J{
 		"id": n.ID, "hospitalId": sv(n.HospitalID), "userId": n.UserID, "title": n.Title, "body": "",
-		"severity": labelP(n.Severity), "channel": sv(n.Channel), "read": n.IsRead, "link": nil, "createdAt": nil,
+		"severity": labelP(n.Severity), "channel": sv(n.Channel), "read": n.IsRead, "link": notificationLink(n.Title), "createdAt": nil,
 	}
+}
+
+// notificationLink: halaman tujuan saat notifikasi lonceng diklik, ditentukan dari isi judulnya.
+// Tabel notifications belum punya kolom tautan, jadi dicocokkan per kata kunci (urutan = prioritas).
+var notificationRoutes = []struct {
+	keywords []string
+	link     string
+}{
+	{[]string{"menunggu verifikasi"}, "#/cred-verification"},
+	{[]string{"kredensial", "sip ", "str ", "kedaluwarsa"}, "#/cred-credentials"},
+	{[]string{"dokumen"}, "#/cred-documents"},
+	{[]string{"anomali"}, "#/claim-anomalies"},
+	{[]string{"ditugaskan", "penugasan", "tugas", "tindakan", "aksi"}, "#/actions"},
+	{[]string{"akreditasi", "kars", "regulasi"}, "#/compliance"},
+	{[]string{"sinkronisasi", "integrasi", "p-care", "simrs", "fhir"}, "#/data-sources"},
+	{[]string{"risiko"}, "#/risk-radar"},
+}
+
+func notificationLink(title string) string {
+	t := strings.ToLower(title) + " "
+	for _, r := range notificationRoutes {
+		for _, k := range r.keywords {
+			if strings.Contains(t, k) {
+				return r.link
+			}
+		}
+	}
+	// Selain itu notifikasi berasal dari aturan ambang (mis. "Sinyal klaim naik 18%"): buka Early Warnings.
+	return "#/early-warnings"
 }
 
 func feDataSource(s model.DataSource) J {
 	return J{
 		"id": s.ID, "hospitalId": s.HospitalID, "name": s.Name, "type": sv(s.Type), "status": labelP(s.Status),
-		"authMethod": sv(s.AuthMethod), "configSummary": nil, "successRate": fv(s.SuccessRate),
-		"avgLatencyMs": nil, "lastSyncAt": tv(s.LastSyncAt), "fhirResources": 24,
-		"coveragePct": fv(s.CoveragePct), "uptime30d": nil, "notes": nil,
+		"authMethod": sv(s.AuthMethod), "configSummary": sv(s.ConfigSummary), "successRate": fv(s.SuccessRate),
+		"avgLatencyMs": iv(s.AvgLatencyMs), "lastSyncAt": tv(s.LastSyncAt), "fhirResources": iv(s.FHIRResources),
+		"coveragePct": fv(s.CoveragePct), "uptime30d": fv(s.Uptime30d), "notes": sv(s.Notes),
 	}
 }
 
@@ -331,11 +381,24 @@ func feJob(j model.IntegrationJob, hid string) J {
 }
 
 func feFacility(f model.Facility) J {
+	// Laik pakai & kesesuaian belum punya kolom sendiri, jadi diturunkan dari ada/berfungsi.
+	avail := f.Availability != nil && *f.Availability
+	fn := f.Functional != nil && *f.Functional
+	feasible, suitable := "Tidak Laik", "Kurang"
+	switch {
+	case avail && fn:
+		feasible, suitable = "Laik Pakai", "Sesuai Kebutuhan"
+		if f.Category != nil && strings.Contains(strings.ToLower(*f.Category), "opsional") {
+			suitable = "Melebihi Kebutuhan"
+		}
+	case avail:
+		feasible, suitable = "Perlu Perbaikan", "Sesuai Kebutuhan"
+	}
 	return J{
 		"id": f.ID, "hospitalId": f.HospitalID, "name": f.Name, "category": strOr(f.Category, "Lainnya"),
 		"availability": yesNo(f.Availability, "Ada", "Tidak Ada"),
 		"functional":   yesNo(f.Functional, "Berfungsi", "Tidak Berfungsi"),
-		"feasible":     nil, "calibration": labelP(f.Calibration), "suitable": nil, "standardRef": nil, "notes": nil,
+		"feasible":     feasible, "calibration": labelP(f.Calibration), "suitable": suitable, "standardRef": nil, "notes": nil,
 	}
 }
 
