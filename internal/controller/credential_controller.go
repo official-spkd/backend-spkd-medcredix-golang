@@ -34,6 +34,17 @@ var credTransitions = map[string]transition{
 	"reject": {[]string{"tinjauan_komite"}, "ditangguhkan", auth.PermApprove},
 }
 
+// docStatusAfter: status dokumen setelah langkah alur kredensial tertentu.
+// Dokumen dianggap terverifikasi begitu kredensialnya lolos langkah verifikasi atau sesudahnya.
+var docStatusAfter = map[string]string{
+	"verify":     "diverifikasi",
+	"review":     "diverifikasi",
+	"approve":    "diverifikasi",
+	"activate":   "diverifikasi",
+	"reactivate": "diverifikasi",
+	"reject":     "ditolak",
+}
+
 // GetCredentials menampilkan daftar kredensial tenaga kesehatan (GET /api/credentials).
 func GetCredentials(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -77,7 +88,8 @@ func GetCredentials(db *gorm.DB) gin.HandlerFunc {
 }
 
 // PatchCredentials menjalankan satu langkah alur kredensial dari credTransitions (PATCH /api/credentials).
-// Status asal dicek dulu, dan yang menyetujui tidak boleh orang yang sama dengan yang memverifikasi.
+// Status asal dicek dulu. Akun yang memverifikasi dokumen boleh langsung menyetujui/menolak
+// (keputusan QA: satu anggota komite cukup), semua langkah tetap tercatat di audit trail.
 func PatchCredentials(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, hid, good := feCtx(c, db)
@@ -111,14 +123,11 @@ func PatchCredentials(db *gorm.DB) gin.HandlerFunc {
 			fail(c, http.StatusConflict, fmt.Sprintf("Aksi %s tidak dapat dilakukan dari status %q.", body.Action, label(cred.Status)))
 			return
 		}
-		if body.Action == "approve" && cred.VerifiedByID != nil && *cred.VerifiedByID == user.ID {
-			fail(c, http.StatusForbidden, "Pemverifikasi tidak boleh menyetujui kredensial yang sama.")
-			return
-		}
 		now := time.Now()
 		updates := map[string]interface{}{"status": t.to}
 		switch body.Action {
-		case "verify", "review":
+		case "verify":
+			// Hanya langkah verifikasi dokumen yang mengisi verifikator; "review" tidak menimpanya.
 			updates["verified_by_id"], updates["verified_at"] = user.ID, now
 		case "approve":
 			updates["approved_by_id"], updates["approved_at"] = user.ID, now
@@ -127,6 +136,16 @@ func PatchCredentials(db *gorm.DB) gin.HandlerFunc {
 		}
 		if dbFail(c, audit.UpdateWithAudit(db, user, hid, "practitioner_credentials", cred.ID, updates, metaOf(c))) {
 			return
+		}
+		// Dokumen yang masih "menunggu_verifikasi" ikut berubah: lolos verifikasi → "diverifikasi",
+		// ditolak komite → "ditolak". Dokumen yang sudah diputus tidak disentuh. Langkah kredensial
+		// di atas sudah tercatat di audit trail.
+		if docStatus, change := docStatusAfter[body.Action]; change {
+			if dbFail(c, db.Model(&model.CredentialDocument{}).
+				Where("credential_id = ? AND status = ?", cred.ID, "menunggu_verifikasi").
+				Update("status", docStatus).Error) {
+				return
+			}
 		}
 		db.First(&cred, "id = ?", cred.ID)
 		var p model.Practitioner
