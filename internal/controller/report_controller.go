@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/spkd/medcredix/internal/audit"
 	"github.com/spkd/medcredix/internal/auth"
 	"github.com/spkd/medcredix/internal/model"
+	"github.com/spkd/medcredix/internal/scoring"
 )
 
 type reportType struct{ key, title, desc string }
@@ -39,6 +41,37 @@ func reportTypeOf(key string) (reportType, bool) {
 
 const reportMethodology = "Scoring engine %s; sumber: SIMRS/EMR/BPJS/SATUSEHAT via integration layer; verifikasi manual wajib untuk keputusan final."
 
+// snapshotFormula: versi formula yang dipakai saat laporan dibuat (disimpan di ringkasan.versiFormula).
+// Laporan lama belum menyimpannya, jadi pakai label umum.
+func snapshotFormula(r model.ReportSnapshot) string {
+	var c struct {
+		Ringkasan struct {
+			VersiFormula string `json:"versiFormula"`
+		} `json:"ringkasan"`
+	}
+	if json.Unmarshal(r.ContentJSON, &c) == nil && c.Ringkasan.VersiFormula != "" {
+		return c.Ringkasan.VersiFormula
+	}
+	return "medcredix-scorer"
+}
+
+// currentScores: skor live RS saat ini (sama persis dengan Dashboard), dikirim bersama laporan
+// supaya Lihat dan Cetak bisa menunjukkan apakah snapshot laporan masih sama dengan Dashboard.
+// Bentuk key sengaja sama dengan content.ringkasan dan content.domain agar mudah dibandingkan.
+func currentScores(in scoring.Intelligence, intel J) J {
+	domains, _ := intel["domains"].([]J)
+	list := make([]J, 0, len(domains))
+	for _, d := range domains {
+		list = append(list, J{"domain": d["label"], "skor": d["score"], "bobot": d["weight"]})
+	}
+	bcds, _ := intel["bcds"].(J)
+	return J{
+		"healthScore": in.HealthScore, "bcds": bcds["final"], "stage": bcds["stage"], "trust": in.Trust.Score,
+		"ccs": intel["ccs"].(J)["score"], "cpcs": intel["cpcs"].(J)["score"],
+		"domain": list, "computedAt": in.ComputedAt, "versiFormula": in.FormulaVersion,
+	}
+}
+
 func feReport(r model.ReportSnapshot, formula string) J {
 	return J{
 		"id": r.ID, "hospitalId": r.HospitalID, "type": r.Type, "title": r.Title, "period": strOr(r.Period, "—"),
@@ -52,6 +85,7 @@ func feReport(r model.ReportSnapshot, formula string) J {
 //
 //	GET /reports            -> daftar + jenis laporan
 //	GET /reports?id=...     -> satu laporan + isinya
+//	GET /reports?id=...&print=1 -> sama, untuk dicetak (izin EXPORT atau PRINT, dicatat di audit)
 //	GET /reports?export=... -> unduh CSV (izin EXPORT)
 func GetReports(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -68,9 +102,20 @@ func GetReports(db *gorm.DB) gin.HandlerFunc {
 			if notFound(c, db.Where("id = ? AND hospital_id = ?", id, hid).First(&r).Error, "Laporan tidak ditemukan.") {
 				return
 			}
+			// print=1: dipakai tombol Cetak. Butuh izin EXPORT atau PRINT dan dicatat di audit trail.
+			if c.Query("print") == "1" {
+				if !auth.HasPermission(user.Role, auth.PermExport) && !auth.HasPermission(user.Role, auth.PermPrint) {
+					_ = audit.Log(db, user, hid, "akses_ditolak", "report_snapshots", r.ID,
+						"Aksi ditolak: cetak laporan butuh izin EXPORT atau PRINT", metaOf(c))
+					fail(c, http.StatusForbidden, fmt.Sprintf("Peran %s tidak memiliki izin EXPORT atau PRINT.", auth.RoleLabels[user.Role]))
+					return
+				}
+				_ = audit.Log(db, user, hid, "export", "report_snapshots", r.ID, "Cetak laporan: "+r.Title+" "+r.Version, metaOf(c))
+			}
 			var content interface{}
 			_ = json.Unmarshal(r.ContentJSON, &content)
-			ok(c, J{"report": feReport(r, "medcredix-scorer"), "content": content})
+			// Lihat dan Cetak memanggil endpoint yang sama, jadi keduanya menerima snapshot DAN skor terkini yang sama.
+			ok(c, J{"report": feReport(r, snapshotFormula(r)), "content": content, "current": reportCurrent(db, hid)})
 			return
 		}
 		var rows []model.ReportSnapshot
@@ -79,14 +124,25 @@ func GetReports(db *gorm.DB) gin.HandlerFunc {
 		}
 		reports := make([]J, 0, len(rows))
 		for _, r := range rows {
-			reports = append(reports, feReport(r, "medcredix-scorer"))
+			reports = append(reports, feReport(r, snapshotFormula(r)))
 		}
 		types := make([]J, 0, len(reportTypes))
 		for _, t := range reportTypes {
 			types = append(types, J{"type": t.key, "title": t.title, "desc": t.desc})
 		}
-		ok(c, J{"reports": reports, "types": types})
+		ok(c, J{"reports": reports, "types": types, "current": reportCurrent(db, hid)})
 	}
+}
+
+// reportCurrent: skor terkini untuk dibandingkan dengan snapshot; nil bila scoring gagal
+// (laporan tetap bisa dibuka, hanya tanpa perbandingan).
+func reportCurrent(db *gorm.DB, hid string) interface{} {
+	in, intel, err := computeFE(db, hid)
+	if err != nil {
+		log.Printf("laporan: skor terkini %s gagal dihitung: %v", hid, err)
+		return nil
+	}
+	return currentScores(in, intel)
 }
 
 func reportCSV(c *gin.Context, db *gorm.DB, user model.User, hid, id string) {
@@ -167,11 +223,15 @@ func PostReports(db *gorm.DB) gin.HandlerFunc {
 			period = fmt.Sprintf("%v–%v", trend[0]["period"], trend[len(trend)-1]["period"])
 		}
 		bcds := intel["bcds"].(J)
+		// Skor ringkasan + 9 domain disimpan di SEMUA jenis laporan (bukan hanya Hospital Health Report),
+		// bersama waktu hitung dan versi formula, supaya setiap snapshot bisa dibandingkan dengan Dashboard.
+		cur := currentScores(in, intel)
 		content := J{"ringkasan": J{
 			"namaRS": h["name"], "kelas": h["class"], "kota": h["city"], "periode": period,
-			"healthScore": in.HealthScore, "bcds": bcds["final"], "stage": bcds["stage"],
-			"trust": in.Trust.Score, "ccs": intel["ccs"].(J)["score"], "cpcs": intel["cpcs"].(J)["score"],
-		}}
+			"healthScore": cur["healthScore"], "bcds": cur["bcds"], "stage": cur["stage"],
+			"trust": cur["trust"], "ccs": cur["ccs"], "cpcs": cur["cpcs"],
+			"dihitungPada": in.ComputedAt, "versiFormula": in.FormulaVersion,
+		}, "domain": cur["domain"]}
 
 		switch body.Type {
 		case "kredensial":
@@ -245,10 +305,6 @@ func PostReports(db *gorm.DB) gin.HandlerFunc {
 			content["disclaimer"] = "Sinyal bersifat netral dan memerlukan verifikasi manual — bukan kesimpulan penyalahgunaan."
 		default:
 			domains := intel["domains"].([]J)
-			list := make([]J, 0, len(domains))
-			for _, d := range domains {
-				list = append(list, J{"domain": d["label"], "skor": d["score"], "bobot": d["weight"]})
-			}
 			sorted := append([]J(nil), domains...)
 			sortJ(sorted, func(a, b J) bool { return a["score"].(float64) < b["score"].(float64) })
 			saran := []J{}
@@ -262,7 +318,6 @@ func PostReports(db *gorm.DB) gin.HandlerFunc {
 				}
 				saran = append(saran, J{"domain": d["label"], "skor": d["score"], "catatan": catatan})
 			}
-			content["domain"] = list
 			content["tren"] = trend
 			content["saran"] = saran
 		}
