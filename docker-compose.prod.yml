@@ -3,7 +3,7 @@
 #   docker compose -f docker-compose.prod.yml up -d --build
 # Beda dengan docker-compose.yml (lokal):
 #   - DB dan API TIDAK dibuka ke internet. Web cuma dibuka di 127.0.0.1:${WEB_PORT}
-#     (default 8090), lalu Caddy yang sudah ada di VPS meneruskan medcredix.spkd.co.id ke sana.
+#     (default 8095), lalu Caddy yang sudah ada di VPS meneruskan medcredix.spkd.co.id ke sana.
 #   - VPS SPKD sudah punya Caddy di port 80/443 (company profile, dll), jadi service
 #     caddy di bawah TIDAK ikut jalan. Hanya untuk server kosong:
 #       docker compose -f docker-compose.prod.yml --profile caddy up -d --build
@@ -49,7 +49,7 @@ services:
     build: ${FRONTEND_DIR:-../frontend}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${WEB_PORT:-8090}:80" # hanya bisa diakses dari VPS sendiri (Caddy host)
+      - "127.0.0.1:${WEB_PORT:-8095}:80" # hanya bisa diakses dari VPS sendiri (Caddy host)
     depends_on:
       - api
 
