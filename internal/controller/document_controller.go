@@ -99,3 +99,59 @@ func GetDocumentFile(db *gorm.DB) gin.HandlerFunc {
 		sendFile(c, *d.StorageKey, str(d.FileType), d.FileName)
 	}
 }
+
+// PatchDocuments memverifikasi atau menolak satu dokumen kredensial (PATCH /api/documents).
+// Body: { id, action: "verify" | "reject" }. Hanya dokumen "menunggu_verifikasi" yang bisa diputus,
+// dan butuh izin VERIFY (Petugas Kredensial, Komite Medis, Admin RS).
+func PatchDocuments(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, hid, good := feCtx(c, db)
+		if !good {
+			return
+		}
+		var body struct {
+			ID     string `json:"id"`
+			Action string `json:"action"`
+		}
+		if !bindBody(c, &body) {
+			return
+		}
+		next, known := map[string]string{"verify": "diverifikasi", "reject": "ditolak"}[body.Action]
+		if body.ID == "" || !known {
+			fail(c, http.StatusBadRequest, "id dan action (verify/reject) wajib diisi.")
+			return
+		}
+		var doc model.CredentialDocument
+		err := db.Joins("JOIN practitioner_credentials pc ON pc.id = credential_documents.credential_id").
+			Where("credential_documents.id = ? AND pc.hospital_id = ?", body.ID, hid).First(&doc).Error
+		if notFound(c, err, "Dokumen tidak ditemukan.") {
+			return
+		}
+		if !requirePerm(c, db, user, hid, auth.PermVerify, "credential_documents", doc.ID) {
+			return
+		}
+		if doc.Status == nil || *doc.Status != "menunggu_verifikasi" {
+			fail(c, http.StatusConflict, fmt.Sprintf("Dokumen sudah berstatus %q.", label(sOr(doc.Status))))
+			return
+		}
+		err = db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&model.CredentialDocument{}).Where("id = ?", doc.ID).Update("status", next).Error; err != nil {
+				return err
+			}
+			return audit.Log(tx, user, hid, body.Action, "credential_documents", doc.ID,
+				fmt.Sprintf("Dokumen %s: %s", doc.FileName, label(next)), metaOf(c))
+		})
+		if dbFail(c, err) {
+			return
+		}
+		doc.Status = &next
+		ok(c, feDocument(doc, hid))
+	}
+}
+
+func sOr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
