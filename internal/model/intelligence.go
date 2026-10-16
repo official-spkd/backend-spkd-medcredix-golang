@@ -73,16 +73,25 @@ type DigitalIndicator struct {
 	Weight       *float64 `gorm:"column:weight" json:"weight"`
 	Direction    *string  `gorm:"column:direction" json:"direction"`
 	FHIRResource *string  `gorm:"column:fhir_resource" json:"fhir_resource"`
+	Unit         *string  `gorm:"column:unit" json:"unit"`                   // %, ms, jam; kosong = %
+	SourceSystem *string  `gorm:"column:source_system" json:"source_system"` // sistem asal, mis. EMR/RME, LIS
 }
 
 func (DigitalIndicator) TableName() string { return "digital_indicators" }
 
 // ComplaintStat memetakan tabel complaint_stats.
 type ComplaintStat struct {
-	ID           string   `gorm:"column:id;primaryKey" json:"id"`
-	HospitalID   string   `gorm:"column:hospital_id" json:"hospital_id"`
-	Month        string   `gorm:"column:month" json:"month"`
-	Total        *int     `gorm:"column:total" json:"total"`
+	ID         string `gorm:"column:id;primaryKey" json:"id"`
+	HospitalID string `gorm:"column:hospital_id" json:"hospital_id"`
+	Month      string `gorm:"column:month" json:"month"`
+	Total      *int   `gorm:"column:total" json:"total"`
+	// Rincian keluhan per kategori; jumlahnya = Total.
+	Antrian      *int     `gorm:"column:antrian" json:"antrian"`
+	Pelayanan    *int     `gorm:"column:pelayanan" json:"pelayanan"`
+	Obat         *int     `gorm:"column:obat" json:"obat"`
+	Administrasi *int     `gorm:"column:administrasi" json:"administrasi"`
+	Fasilitas    *int     `gorm:"column:fasilitas" json:"fasilitas"`
+	Lainnya      *int     `gorm:"column:lainnya" json:"lainnya"`
 	Satisfaction *float64 `gorm:"column:satisfaction" json:"satisfaction"`
 	PeerAvg      *float64 `gorm:"column:peer_avg" json:"peer_avg"`
 }
@@ -100,6 +109,12 @@ type DataSource struct {
 	SuccessRate *float64   `gorm:"column:success_rate" json:"success_rate"`
 	CoveragePct *float64   `gorm:"column:coverage_pct" json:"coverage_pct"`
 	LastSyncAt  *time.Time `gorm:"column:last_sync_at" json:"last_sync_at"`
+	// Detail kanal untuk halaman Interoperabilitas & Data Sources.
+	ConfigSummary *string  `gorm:"column:config_summary" json:"config_summary"`
+	AvgLatencyMs  *int     `gorm:"column:avg_latency_ms" json:"avg_latency_ms"`
+	Uptime30d     *float64 `gorm:"column:uptime_30d" json:"uptime_30d"`
+	FHIRResources *int     `gorm:"column:fhir_resources" json:"fhir_resources"`
+	Notes         *string  `gorm:"column:notes" json:"notes"`
 }
 
 func (DataSource) TableName() string { return "data_sources" }
