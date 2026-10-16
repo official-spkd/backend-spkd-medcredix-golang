@@ -32,13 +32,15 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 			fail(c, http.StatusBadRequest, "Email dan kata sandi wajib diisi.")
 			return
 		}
-		email := strings.ToLower(strings.TrimSpace(body.Email))
+		// Email harus sama persis dengan yang ada di database (huruf besar/kecil dibedakan).
+		email := strings.TrimSpace(body.Email)
 		if len(email) > maxEmailLength || len(body.Password) > maxPassLength {
 			fail(c, http.StatusUnauthorized, "Email atau kata sandi salah.")
 			return
 		}
 		ip := c.ClientIP()
-		key := ip + "|" + email
+		// Kunci limiter tetap huruf kecil supaya variasi kapital tetap dihitung sebagai percobaan yang sama.
+		key := ip + "|" + strings.ToLower(email)
 		ipKey := "ip|" + ip
 		meta := metaOf(c)
 
